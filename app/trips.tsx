@@ -54,10 +54,8 @@ export default function Trips() {
     return ranked[0] ?? null;
   }, [now]);
 
-  const goTo = (trip: Trip, action: NextAction) => {
-    // Every trip currently routes to the one itinerary screen; a real build
-    // would pass the PNR. The target tells it which sheet to open on arrival.
-    router.push('/itinerary');
+  const goTo = (trip: Trip, _action: NextAction) => {
+    router.push({ pathname: '/itinerary', params: { pnr: trip.pnr } });
   };
 
   const empty =

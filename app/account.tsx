@@ -4,33 +4,71 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
+import { PickerSheet } from '../components/PickerSheet';
+import {
+  ProfileSheet,
+  TravellerSheet,
+  SpendHistorySheet,
+  PaymentMethodSheet,
+  HelpCentreSheet,
+  TermsSheet,
+  SignOutSheet,
+} from '../components/AccountSheets';
 import { palette, spacing, radii } from '../constants/tokens';
 import { useNow } from '../data/trip';
+import { airports } from '../data/airports';
 import {
-  profile,
-  savedTravellers,
-  preferences,
-  notificationSettings,
-  paymentMethods,
+  initialProfile,
+  initialTravellers,
+  initialPreferences,
+  initialNotifications,
+  initialPaymentMethods,
   spendSummary,
   topRoutes,
   documentNeedsAttention,
+  syncSelfFromProfile,
+  withPrimary,
+  paymentMethodDetail,
+  PREF_META,
+  CURRENCIES,
+  type Profile,
+  type SavedTraveller,
+  type Preferences,
+  type PrefKey,
   type NotificationSetting,
+  type PaymentMethod,
 } from '../data/account';
 
 const HPAD = spacing.lg;
+
+type SheetKind =
+  | 'profile'
+  | 'spend'
+  | 'traveller'
+  | 'payment'
+  | 'help'
+  | 'terms'
+  | 'signout'
+  | null;
 
 export default function Account() {
   const now = useNow();
   const router = useRouter();
   const summary = useMemo(() => spendSummary(now), [now]);
   const routes = useMemo(() => topRoutes(), []);
-  const [notifs, setNotifs] = useState<NotificationSetting[]>(notificationSettings);
 
-  const toggleNotif = (id: string) =>
-    setNotifs((list) =>
-      list.map((n) => (n.id === id ? { ...n, enabled: !n.enabled } : n)),
-    );
+  const [profile, setProfile] = useState<Profile>(initialProfile);
+  const [travellers, setTravellers] = useState<SavedTraveller[]>(initialTravellers);
+  const [prefs, setPrefs] = useState<Preferences>(initialPreferences);
+  const [notifs, setNotifs] = useState<NotificationSetting[]>(initialNotifications);
+  const [methods, setMethods] = useState<PaymentMethod[]>(initialPaymentMethods);
+
+  const [sheet, setSheet] = useState<SheetKind>(null);
+  const [editTraveller, setEditTraveller] = useState<SavedTraveller | null>(null);
+  const [addingTraveller, setAddingTraveller] = useState(false);
+  const [editPayment, setEditPayment] = useState<PaymentMethod | null>(null);
+  const [addingPayment, setAddingPayment] = useState(false);
+  const [prefPicker, setPrefPicker] = useState<PrefKey | null>(null);
 
   const initials = profile.name
     .split(' ')
@@ -38,17 +76,59 @@ export default function Account() {
     .slice(0, 2)
     .join('');
 
-  const docsNeedingAttention = savedTravellers.filter(documentNeedsAttention).length;
+  const docsNeedingAttention = travellers.filter(documentNeedsAttention).length;
+
+  const airportOptions = useMemo(
+    () =>
+      [...new Set(airports.map((a) => a.iata))].sort((a, b) => a.localeCompare(b)),
+    [],
+  );
+
+  const toggleNotif = (id: string) =>
+    setNotifs((list) =>
+      list.map((n) => (n.id === id ? { ...n, enabled: !n.enabled } : n)),
+    );
+
+  const openTraveller = (t: SavedTraveller) => {
+    setEditTraveller(t);
+    setAddingTraveller(false);
+    setSheet('traveller');
+  };
+
+  const openAddTraveller = () => {
+    setEditTraveller(null);
+    setAddingTraveller(true);
+    setSheet('traveller');
+  };
+
+  const openPayment = (pm: PaymentMethod) => {
+    setEditPayment(pm);
+    setAddingPayment(false);
+    setSheet('payment');
+  };
+
+  const openAddPayment = () => {
+    setEditPayment(null);
+    setAddingPayment(true);
+    setSheet('payment');
+  };
+
+  const closeSheets = () => {
+    setSheet(null);
+    setAddingTraveller(false);
+    setAddingPayment(false);
+  };
+
+  const homeAirportLabel = (() => {
+    const a = airports.find((x) => x.iata === prefs.homeAirport);
+    return a ? `${a.iata} · ${a.city}` : prefs.homeAirport;
+  })();
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.header}>
         <Text variant="h1">Account</Text>
-        <Pressable
-          style={s.iconBtn}
-          onPress={() => router.back()}
-          hitSlop={6}
-        >
+        <Pressable style={s.iconBtn} onPress={() => router.back()} hitSlop={6}>
           <Feather name="x" size={20} color={palette.gray900} />
         </Pressable>
       </View>
@@ -59,7 +139,7 @@ export default function Account() {
         showsVerticalScrollIndicator={false}
       >
         {/* ── Profile ── */}
-        <Pressable style={s.profile} onPress={() => {}}>
+        <Pressable style={s.profile} onPress={() => setSheet('profile')}>
           <View style={s.avatar}>
             <Text variant="h2" style={{ color: palette.white }}>
               {initials}
@@ -86,8 +166,11 @@ export default function Account() {
                 {summary.thisYear.toLocaleString()}
               </Text>
             </View>
-            <Pressable style={s.summaryLink} onPress={() => {}}>
-              <Text variant="caption" style={{ color: palette.primary600, fontWeight: '600' }}>
+            <Pressable style={s.summaryLink} onPress={() => setSheet('spend')}>
+              <Text
+                variant="caption"
+                style={{ color: palette.primary600, fontWeight: '600' }}
+              >
                 Spend history
               </Text>
             </Pressable>
@@ -132,7 +215,10 @@ export default function Account() {
             <View style={s.carbonTitleRow}>
               <Text variant="bodyMedium">Carbon footprint</Text>
               <View style={s.soonTag}>
-                <Text variant="caption" style={{ color: palette.gray600, fontWeight: '600' }}>
+                <Text
+                  variant="caption"
+                  style={{ color: palette.gray600, fontWeight: '600' }}
+                >
                   Coming soon
                 </Text>
               </View>
@@ -147,17 +233,20 @@ export default function Account() {
         {/* ── Travellers ── */}
         <SectionLabel text="Saved travellers" />
         <View style={s.card}>
-          {savedTravellers.map((t, i) => {
+          {travellers.map((t, i) => {
             const attention = documentNeedsAttention(t);
             return (
               <Pressable
                 key={t.id}
-                style={[s.row, i === savedTravellers.length - 1 && s.rowLast]}
-                onPress={() => {}}
+                style={[s.row, i === travellers.length - 1 && s.rowLast]}
+                onPress={() => openTraveller(t)}
               >
                 <View style={s.travMark}>
-                  <Text variant="bodySmall" style={{ color: palette.gray700, fontWeight: '700' }}>
-                    {t.name.charAt(0)}
+                  <Text
+                    variant="bodySmall"
+                    style={{ color: palette.gray700, fontWeight: '700' }}
+                  >
+                    {t.name.charAt(0) || '?'}
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
@@ -165,12 +254,16 @@ export default function Account() {
                   <Text variant="caption" color="textTertiary">
                     {t.relationship}
                     {t.type !== 'adult' ? ` · ${t.type}` : ''}
+                    {t.seatPreference ? ` · ${t.seatPreference}` : ''}
                   </Text>
                 </View>
                 {attention ? (
                   <View style={s.attentionTag}>
                     <Feather name="alert-circle" size={12} color={palette.warningDark} />
-                    <Text variant="caption" style={{ color: palette.warningDark, fontWeight: '600' }}>
+                    <Text
+                      variant="caption"
+                      style={{ color: palette.warningDark, fontWeight: '600' }}
+                    >
                       Passport
                     </Text>
                   </View>
@@ -180,9 +273,12 @@ export default function Account() {
               </Pressable>
             );
           })}
-          <Pressable style={s.addRow} onPress={() => {}}>
+          <Pressable style={s.addRow} onPress={openAddTraveller}>
             <Feather name="plus" size={17} color={palette.primary600} />
-            <Text variant="bodySmall" style={{ color: palette.primary600, fontWeight: '600' }}>
+            <Text
+              variant="bodySmall"
+              style={{ color: palette.primary600, fontWeight: '600' }}
+            >
               Add a traveller
             </Text>
           </Pressable>
@@ -198,10 +294,31 @@ export default function Account() {
         {/* ── Preferences ── */}
         <SectionLabel text="Travel preferences" />
         <View style={s.card}>
-          <PrefRow icon="grid" label="Seat" value={preferences.seat} />
-          <PrefRow icon="coffee" label="Meal" value={preferences.meal} />
-          <PrefRow icon="map-pin" label="Home airport" value={preferences.homeAirport} />
-          <PrefRow icon="dollar-sign" label="Currency" value={preferences.currency} last />
+          <PrefRow
+            icon="grid"
+            label="Seat"
+            value={prefs.seat}
+            onPress={() => setPrefPicker('seat')}
+          />
+          <PrefRow
+            icon="coffee"
+            label="Meal"
+            value={prefs.meal}
+            onPress={() => setPrefPicker('meal')}
+          />
+          <PrefRow
+            icon="map-pin"
+            label="Home airport"
+            value={homeAirportLabel}
+            onPress={() => setPrefPicker('homeAirport')}
+          />
+          <PrefRow
+            icon="dollar-sign"
+            label="Currency"
+            value={prefs.currency}
+            last
+            onPress={() => setPrefPicker('currency')}
+          />
         </View>
 
         {/* ── Notifications ── */}
@@ -235,11 +352,11 @@ export default function Account() {
         {/* ── Payment methods ── */}
         <SectionLabel text="Payment methods" />
         <View style={s.card}>
-          {paymentMethods.map((pm, i) => (
+          {methods.map((pm, i) => (
             <Pressable
               key={pm.id}
-              style={[s.row, i === paymentMethods.length - 1 && s.rowLast]}
-              onPress={() => {}}
+              style={[s.row, i === methods.length - 1 && s.rowLast]}
+              onPress={() => openPayment(pm)}
             >
               <View style={s.pmIcon}>
                 <Feather
@@ -253,7 +370,10 @@ export default function Account() {
                   <Text variant="bodyMedium">{pm.label}</Text>
                   {pm.primary && (
                     <View style={s.primaryTag}>
-                      <Text variant="caption" style={{ color: palette.primary700, fontWeight: '600' }}>
+                      <Text
+                        variant="caption"
+                        style={{ color: palette.primary700, fontWeight: '600' }}
+                      >
                         Primary
                       </Text>
                     </View>
@@ -266,9 +386,12 @@ export default function Account() {
               <Feather name="chevron-right" size={18} color={palette.gray400} />
             </Pressable>
           ))}
-          <Pressable style={s.addRow} onPress={() => {}}>
+          <Pressable style={s.addRow} onPress={openAddPayment}>
             <Feather name="plus" size={17} color={palette.primary600} />
-            <Text variant="bodySmall" style={{ color: palette.primary600, fontWeight: '600' }}>
+            <Text
+              variant="bodySmall"
+              style={{ color: palette.primary600, fontWeight: '600' }}
+            >
               Add a payment method
             </Text>
           </Pressable>
@@ -277,13 +400,140 @@ export default function Account() {
         {/* ── Support & legal ── */}
         <SectionLabel text="Support" />
         <View style={s.card}>
-          <LinkRow icon="help-circle" label="Help centre" />
-          <LinkRow icon="file-text" label="Terms and privacy" />
-          <LinkRow icon="log-out" label="Sign out" danger last />
+          <LinkRow
+            icon="help-circle"
+            label="Help centre"
+            onPress={() => setSheet('help')}
+          />
+          <LinkRow
+            icon="file-text"
+            label="Terms and privacy"
+            onPress={() => setSheet('terms')}
+          />
+          <LinkRow
+            icon="log-out"
+            label="Sign out"
+            danger
+            last
+            onPress={() => setSheet('signout')}
+          />
         </View>
 
         <View style={{ height: spacing.xl }} />
       </ScrollView>
+
+      {/* ── Sheets ── */}
+      <ProfileSheet
+        visible={sheet === 'profile'}
+        profile={profile}
+        onClose={closeSheets}
+        onSave={(p) => {
+          setProfile(p);
+          setTravellers((list) => syncSelfFromProfile(list, p));
+          closeSheets();
+        }}
+      />
+
+      <SpendHistorySheet
+        visible={sheet === 'spend'}
+        onClose={closeSheets}
+        onOpenTrip={(pnr) => {
+          closeSheets();
+          router.push({ pathname: '/itinerary', params: { pnr } });
+        }}
+      />
+
+      <TravellerSheet
+        visible={sheet === 'traveller'}
+        traveller={addingTraveller ? null : editTraveller}
+        onClose={closeSheets}
+        onSave={(t) => {
+          setTravellers((list) => {
+            const exists = list.some((x) => x.id === t.id);
+            return exists ? list.map((x) => (x.id === t.id ? t : x)) : [...list, t];
+          });
+          if (t.id === 'self') {
+            setProfile((p) => ({
+              ...p,
+              name: t.name,
+              passportNumber: t.passportNumber,
+              nationality: t.nationality,
+              passportExpiry: t.passportExpiry,
+            }));
+          }
+          closeSheets();
+        }}
+        onRemove={(id) => {
+          setTravellers((list) => list.filter((t) => t.id !== id));
+          closeSheets();
+        }}
+      />
+
+      <PaymentMethodSheet
+        visible={sheet === 'payment'}
+        method={addingPayment ? null : editPayment}
+        methods={methods}
+        onClose={closeSheets}
+        onSave={(pm) => {
+          const normalised = { ...pm, detail: paymentMethodDetail(pm) };
+          setMethods((list) => {
+            const exists = list.some((x) => x.id === normalised.id);
+            if (!exists) {
+              const next = [...list, normalised];
+              return normalised.primary ? withPrimary(next, normalised.id) : next;
+            }
+            return list.map((x) => (x.id === normalised.id ? normalised : x));
+          });
+          closeSheets();
+        }}
+        onRemove={(id) => {
+          setMethods((list) => {
+            if (list.length <= 1) return list;
+            const next = list.filter((m) => m.id !== id);
+            if (!next.some((m) => m.primary) && next[0]) {
+              return withPrimary(next, next[0].id);
+            }
+            return next;
+          });
+          closeSheets();
+        }}
+        onSetPrimary={(id) => {
+          setMethods((list) => withPrimary(list, id));
+          setEditPayment((pm) => (pm ? { ...pm, primary: true } : pm));
+        }}
+      />
+
+      <HelpCentreSheet visible={sheet === 'help'} onClose={closeSheets} />
+      <TermsSheet visible={sheet === 'terms'} onClose={closeSheets} />
+      <SignOutSheet
+        visible={sheet === 'signout'}
+        onClose={closeSheets}
+        onConfirm={() => {
+          closeSheets();
+          router.replace('/onboarding');
+        }}
+      />
+
+      {prefPicker && (
+        <PickerSheet
+          visible
+          title={PREF_META[prefPicker].label}
+          options={
+            prefPicker === 'homeAirport'
+              ? airportOptions
+              : prefPicker === 'currency'
+                ? CURRENCIES
+                : PREF_META[prefPicker].options
+          }
+          selected={prefs[prefPicker]}
+          searchable={prefPicker === 'homeAirport'}
+          onClose={() => setPrefPicker(null)}
+          onSelect={(v) => {
+            setPrefs((p) => ({ ...p, [prefPicker]: v }));
+            setPrefPicker(null);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -306,24 +556,31 @@ function PrefRow({
   label,
   value,
   last,
+  onPress,
 }: {
   icon: string;
   label: string;
   value: string;
   last?: boolean;
+  onPress: () => void;
 }) {
   return (
-    <Pressable style={[s.row, last && s.rowLast]} onPress={() => {}}>
+    <Pressable style={[s.row, last && s.rowLast]} onPress={onPress}>
       <View style={s.prefIcon}>
         <Feather name={icon as never} size={16} color={palette.gray600} />
       </View>
       <Text variant="bodySmall" style={{ flex: 1 }}>
         {label}
       </Text>
-      <Text variant="bodySmall" color="textSecondary">
+      <Text variant="bodySmall" color="textSecondary" numberOfLines={1}>
         {value}
       </Text>
-      <Feather name="chevron-right" size={18} color={palette.gray400} style={{ marginLeft: 6 }} />
+      <Feather
+        name="chevron-right"
+        size={18}
+        color={palette.gray400}
+        style={{ marginLeft: 6 }}
+      />
     </Pressable>
   );
 }
@@ -333,14 +590,16 @@ function LinkRow({
   label,
   danger,
   last,
+  onPress,
 }: {
   icon: string;
   label: string;
   danger?: boolean;
   last?: boolean;
+  onPress: () => void;
 }) {
   return (
-    <Pressable style={[s.row, last && s.rowLast]} onPress={() => {}}>
+    <Pressable style={[s.row, last && s.rowLast]} onPress={onPress}>
       <View style={s.prefIcon}>
         <Feather
           name={icon as never}
@@ -361,11 +620,7 @@ function LinkRow({
 
 function Toggle({ on, onPress }: { on: boolean; onPress: () => void }) {
   return (
-    <Pressable
-      style={[s.toggle, on && s.toggleOn]}
-      onPress={onPress}
-      hitSlop={6}
-    >
+    <Pressable style={[s.toggle, on && s.toggleOn]} onPress={onPress} hitSlop={6}>
       <View style={[s.knob, on && s.knobOn]} />
     </Pressable>
   );
@@ -405,7 +660,6 @@ const s = StyleSheet.create({
 
   scroll: { paddingHorizontal: HPAD },
 
-  // Profile
   profile: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -426,7 +680,6 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Summary
   summary: {
     backgroundColor: palette.white,
     borderRadius: radii.lg,
@@ -440,7 +693,12 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
-  summaryAmount: { fontSize: 28, fontWeight: '700', color: palette.gray900, lineHeight: 34 },
+  summaryAmount: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: palette.gray900,
+    lineHeight: 34,
+  },
   summaryLink: {
     backgroundColor: palette.primary50,
     paddingHorizontal: spacing.md,
@@ -457,7 +715,11 @@ const s = StyleSheet.create({
   },
   stat: { flex: 1, alignItems: 'center', gap: 2 },
   statValue: { fontSize: 20, fontWeight: '700', color: palette.gray900 },
-  statDivider: { width: StyleSheet.hairlineWidth, height: 32, backgroundColor: palette.gray200 },
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 32,
+    backgroundColor: palette.gray200,
+  },
 
   routes: {
     marginTop: spacing.lg,
@@ -467,7 +729,6 @@ const s = StyleSheet.create({
   },
   routeRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5 },
 
-  // Carbon
   carbon: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -485,7 +746,12 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  carbonTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 2 },
+  carbonTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: 2,
+  },
   soonTag: {
     backgroundColor: palette.white,
     paddingHorizontal: spacing.sm,
@@ -493,7 +759,6 @@ const s = StyleSheet.create({
     borderRadius: radii.xs,
   },
 
-  // Sections
   sectionLabel: { letterSpacing: 1, marginTop: spacing.md, marginBottom: spacing.sm },
   card: {
     backgroundColor: palette.white,
@@ -560,7 +825,12 @@ const s = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: palette.gray100,
   },
-  notifTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 2 },
+  notifTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: 2,
+  },
   channelTag: {
     flexDirection: 'row',
     alignItems: 'center',

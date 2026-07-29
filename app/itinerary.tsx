@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   ScrollView,
@@ -7,6 +7,7 @@ import {
   LayoutAnimation,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, Plane } from '../components/ui';
 import { palette, spacing, radii, shadows } from '../constants/tokens';
@@ -60,8 +61,14 @@ import {
   type ReadinessLevel,
   type TravelDocument,
 } from '../data/trip';
+import { allTrips } from '../data/trips';
 
 const HPAD = spacing.lg;
+
+function tripForPnr(pnr: string | undefined): Trip {
+  if (!pnr) return initialTrip;
+  return allTrips.find((t) => t.pnr === pnr) ?? initialTrip;
+}
 
 const TONE = {
   neutral: { bg: palette.gray100, fg: palette.gray700, dot: palette.gray500 },
@@ -72,7 +79,12 @@ const TONE = {
 
 export default function Itinerary() {
   const now = useNow();
-  const [trip, setTrip] = useState<Trip>(initialTrip);
+  const { pnr } = useLocalSearchParams<{ pnr?: string }>();
+  const [trip, setTrip] = useState<Trip>(() => tripForPnr(pnr));
+
+  useEffect(() => {
+    setTrip(tripForPnr(typeof pnr === 'string' ? pnr : undefined));
+  }, [pnr]);
   const [expandedSeg, setExpandedSeg] = useState<number | null>(0);
   const [checkInOpen, setCheckInOpen] = useState(false);
   const [passOpen, setPassOpen] = useState(false);
