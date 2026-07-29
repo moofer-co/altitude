@@ -100,6 +100,7 @@ export default function Home() {
   const pinned = useRef(new Animated.Value(0)).current;
   const homeFade = useRef(new Animated.Value(1)).current;
   const isPinned = useRef(false);
+  const [headerScrolled, setHeaderScrolled] = useState(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchBarRef = useRef<View>(null);
   const morphLock = useRef(false);
@@ -140,6 +141,7 @@ export default function Home() {
       const should = y > PIN_AT;
       if (should !== isPinned.current) {
         isPinned.current = should;
+        setHeaderScrolled(should);
         Animated.spring(pinned, {
           toValue: should ? 1 : 0,
           useNativeDriver: true,
@@ -162,15 +164,23 @@ export default function Home() {
   }, []);
 
   const chipOpacity = pinned;
+  const weatherOpacity = pinned.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
   const chipShift = pinned.interpolate({
     inputRange: [0, 1],
-    outputRange: [8, 0],
+    outputRange: [6, 0],
+  });
+  const weatherShift = pinned.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -6],
   });
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <Animated.View style={[s.fadeRoot, { opacity: homeFade }]}>
-        {/* ── Greeting ── */}
+        {/* ── Greeting: name left · weather/location swap + bell right ── */}
         <View style={s.greeting}>
           <Pressable style={s.profile} onPress={() => router.push('/account')}>
             <View style={s.avatar}>
@@ -178,34 +188,51 @@ export default function Home() {
                 RM
               </Text>
             </View>
-            <Text variant="bodySmall" numberOfLines={1} style={{ flexShrink: 1 }}>
-              Hello, Ramesh
-            </Text>
+            <Text variant="bodySmall">Hello, Ramesh</Text>
           </Pressable>
 
-          <View style={s.weatherSlot}>
-            <WeatherPill
-              weather={homeWeather(origin.city, origin.iata)}
-              onPress={() => {
-                const wx = homeWeather(origin.city, origin.iata);
-                showNotice(`${origin.city}: ${wx.tempC}° · ${wx.label}`);
-              }}
-            />
-          </View>
-
           <View style={s.greetingRight}>
-            {/* Origin chip appears once the main pill scrolls away */}
-            <Animated.View
-              style={{ opacity: chipOpacity, transform: [{ translateY: chipShift }] }}
-              pointerEvents="box-none"
-            >
-              <Pressable style={s.originChip} onPress={() => setLocationOpen(true)}>
-                <Feather name="map-pin" size={12} color={palette.primary600} />
-                <Text variant="caption" style={{ color: palette.primary700, fontWeight: '600' }}>
-                  {origin.iata}
-                </Text>
-              </Pressable>
-            </Animated.View>
+            {/* Same slot: weather by default, location chip after scroll */}
+            <View style={s.swapSlot}>
+              <Animated.View
+                style={[
+                  s.swapItem,
+                  {
+                    opacity: weatherOpacity,
+                    transform: [{ translateY: weatherShift }],
+                  },
+                ]}
+                pointerEvents={headerScrolled ? 'none' : 'auto'}
+              >
+                <WeatherPill
+                  weather={homeWeather(origin.city, origin.iata)}
+                  onPress={() => {
+                    const wx = homeWeather(origin.city, origin.iata);
+                    showNotice(`${origin.city}: ${wx.tempC}° · ${wx.label}`);
+                  }}
+                />
+              </Animated.View>
+              <Animated.View
+                style={[
+                  s.swapItem,
+                  {
+                    opacity: chipOpacity,
+                    transform: [{ translateY: chipShift }],
+                  },
+                ]}
+                pointerEvents={headerScrolled ? 'auto' : 'none'}
+              >
+                <Pressable style={s.originChip} onPress={() => setLocationOpen(true)}>
+                  <Feather name="map-pin" size={12} color={palette.primary600} />
+                  <Text
+                    variant="caption"
+                    style={{ color: palette.primary700, fontWeight: '600' }}
+                  >
+                    {origin.iata}
+                  </Text>
+                </Pressable>
+              </Animated.View>
+            </View>
 
             <Pressable
               style={s.iconBtn}
@@ -475,7 +502,7 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: HPAD,
     paddingVertical: spacing.sm,
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   profile: {
     flexDirection: 'row',
@@ -487,8 +514,7 @@ const s = StyleSheet.create({
     paddingRight: spacing.md,
     paddingVertical: spacing.xs,
     minHeight: 48,
-    flexShrink: 1,
-    maxWidth: '46%',
+    flexShrink: 0,
   },
   avatar: {
     width: 38,
@@ -498,12 +524,26 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  weatherSlot: {
-    flexShrink: 0,
+  greetingRight: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
+    flexShrink: 0,
+  },
+  /** Weather and location chip share one slot so the name never truncates. */
+  swapSlot: {
+    minWidth: 108,
+    height: 44,
+    alignItems: 'flex-end',
     justifyContent: 'center',
   },
-  greetingRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 0 },
+  swapItem: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
   originChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -512,6 +552,7 @@ const s = StyleSheet.create({
     borderRadius: radii.full,
     paddingHorizontal: spacing.md,
     paddingVertical: 9,
+    minHeight: 40,
   },
   iconBtn: {
     width: 44,
