@@ -52,12 +52,15 @@ const HEADER_H = 64;
 const MONTH_H = 26;
 const DATE_H = 82;
 const FILTER_H = 60;
-/** Month sits above the chrome and only mounts when the scrolled month differs. */
-const CHROME_H = DATE_H + FILTER_H;
+const CHROME_BASE = DATE_H + FILTER_H;
 
 const MAX_COMPARE = 3;
 const HESITATION_THRESHOLD = 4;
 const HESITATION_DELAY = 28000;
+/** Near top — only then do dates/filters return. */
+const TOP_RESTORE_Y = 28;
+/** Past this, scrolling down collapses the date chrome. */
+const COLLAPSE_Y = 56;
 
 const DESTINATION_CITY = 'Bengaluru';
 const BASE_MONTH_KEY = `${dateStrip[0].monthFull}-${dateStrip[0].year}`;
@@ -91,8 +94,6 @@ export default function Flights() {
   const router = useRouter();
   const [pax, setPax] = useState<PaxMix>(defaultPax);
   const [dateIndex, setDateIndex] = useState(0);
-  /** Month currently under the left edge of the strip — null means still the search month. */
-  const [scrolledMonth, setScrolledMonth] = useState<(typeof dateStrip)[number] | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('price');
   const [filters, setFilters] = useState<FlightFilters>(emptyFlightFilters);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -117,7 +118,7 @@ export default function Flights() {
   const signals = useRef(0);
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dateScrollRef = useRef<ScrollView>(null);
-  const monthFade = useRef(new Animated.Value(0)).current;
+  const monthPad = useRef(new Animated.Value(0)).current;
 
   const selectedDate = dateStrip[dateIndex] ?? dateStrip[0];
   const lowestPrice = useMemo(
@@ -125,23 +126,19 @@ export default function Flights() {
     [],
   );
 
-  const showMonth =
-    !!scrolledMonth && monthKey(scrolledMonth) !== BASE_MONTH_KEY;
+  const [monthLabel, setMonthLabel] = useState<string | null>(null);
 
   const revealMonth = useCallback(
     (d: (typeof dateStrip)[number]) => {
       const changed = monthKey(d) !== BASE_MONTH_KEY;
-      setScrolledMonth(changed ? d : null);
-      if (changed) {
-        monthFade.setValue(0);
-        Animated.timing(monthFade, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }).start();
-      }
+      setMonthLabel(changed ? monthBanner(d) : null);
+      Animated.timing(monthPad, {
+        toValue: changed ? MONTH_H : 0,
+        duration: 160,
+        useNativeDriver: false,
+      }).start();
     },
-    [monthFade],
+    [monthPad],
   );
 
   const onDateScroll = useCallback(
@@ -170,12 +167,36 @@ export default function Flights() {
   );
 
   // ── Chrome animation ──
+  // collapse: 0 = dates/filters/month visible, 1 = fully hidden
+  // pill: 0 = sort visible, 120 = sort off-screen
   const collapse = useRef(new Animated.Value(0)).current;
   const chrome = useRef(new Animated.Value(0)).current;
   const pill = useRef(new Animated.Value(0)).current;
   const lastY = useRef(0);
   const lastDir = useRef<'up' | 'down'>('up');
+  const collapseTarget = useRef(0);
   const idle = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const chromeContentH = Animated.add(
+    new Animated.Value(CHROME_BASE),
+    monthPad,
+  );
+  const openFactor = collapse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
+  const compareHide = chrome.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
+  const chromeHeight = Animated.multiply(
+    Animated.multiply(openFactor, chromeContentH),
+    compareHide,
+  );
+  const chromeShift = Animated.multiply(
+    collapse,
+    Animated.multiply(chromeContentH, -1),
+  );
 
   const headerHeight = chrome.interpolate({
     inputRange: [0, 1],
@@ -184,14 +205,6 @@ export default function Flights() {
   const headerOpacity = chrome.interpolate({
     inputRange: [0, 0.6, 1],
     outputRange: [1, 0, 0],
-  });
-  const chromeHeight = Animated.multiply(
-    collapse.interpolate({ inputRange: [0, 1], outputRange: [CHROME_H, 0] }),
-    chrome.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
-  );
-  const chromeShift = collapse.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -CHROME_H],
   });
   const compareBarHeight = chrome.interpolate({
     inputRange: [0, 1],
@@ -203,12 +216,15 @@ export default function Flights() {
   });
 
   const runCollapse = useCallback(
-    (to: number) =>
+    (to: number) => {
+      if (collapseTarget.current === to) return;
+      collapseTarget.current = to;
       Animated.timing(collapse, {
         toValue: to,
-        duration: 200,
+        duration: 220,
         useNativeDriver: false,
-      }).start(),
+      }).start();
+    },
     [collapse],
   );
   const runChrome = useCallback(
@@ -225,8 +241,8 @@ export default function Flights() {
       Animated.spring(pill, {
         toValue: to,
         useNativeDriver: true,
-        tension: 80,
-        friction: 12,
+        tension: 90,
+        friction: 14,
       }).start(),
     [pill],
   );
@@ -237,36 +253,44 @@ export default function Flights() {
       const y = contentOffset.y;
       const maxScroll = Math.max(0, contentSize.height - layoutMeasurement.height);
 
+      // While the finger is moving, tuck the sort bar away; idle brings it back.
       if (idle.current) clearTimeout(idle.current);
-      idle.current = setTimeout(() => runPill(0), 380);
+      runPill(120);
+      idle.current = setTimeout(() => runPill(0), 420);
 
-      if (maxScroll < CHROME_H + 140) {
+      if (maxScroll < CHROME_BASE + 140) {
         lastY.current = y;
         return;
       }
 
-      // Rubber-band zones flip direction every frame; ignore them
-      if (y <= 2 || y >= maxScroll - 4) {
-        if (y <= 2 && lastDir.current !== 'up') {
-          lastDir.current = 'up';
-          runCollapse(0);
-        }
+      // At the very top — restore date chrome
+      if (y <= TOP_RESTORE_Y) {
+        lastDir.current = 'up';
+        runCollapse(0);
+        lastY.current = y;
+        return;
+      }
+
+      // Ignore rubber-band at the bottom
+      if (y >= maxScroll - 4) {
         lastY.current = y;
         return;
       }
 
       const dir =
-        y > lastY.current + 4 ? 'down' : y < lastY.current - 4 ? 'up' : lastDir.current;
+        y > lastY.current + 3 ? 'down' : y < lastY.current - 3 ? 'up' : lastDir.current;
 
       if (dir !== lastDir.current) {
         lastDir.current = dir;
-        if (dir === 'down' && y > 48) {
+        if (dir === 'down' && y > COLLAPSE_Y) {
+          // Hide month + dates + filters; sort stays hidden until idle
           runCollapse(1);
-          runPill(120);
-        } else if (dir === 'up') {
-          runCollapse(0);
         }
+        // Scrolling up mid-list does NOT reopen dates — only TOP_RESTORE_Y does
+      } else if (dir === 'down' && y > COLLAPSE_Y) {
+        runCollapse(1);
       }
+
       lastY.current = y;
     },
     [runCollapse, runPill],
@@ -425,8 +449,12 @@ export default function Flights() {
             </View>
           </View>
 
-          <Pressable style={s.editBtn} onPress={() => setPaxOpen(true)} hitSlop={6}>
-            <Feather name="edit-2" size={16} color={palette.primary600} />
+          <Pressable
+            style={s.editBtn}
+            onPress={() => setPaxOpen(true)}
+            hitSlop={12}
+          >
+            <Feather name="edit-2" size={18} color={palette.primary600} />
           </Pressable>
         </View>
       </Animated.View>
@@ -456,16 +484,15 @@ export default function Flights() {
         </View>
       </Animated.View>
 
-      {/* Month only after leaving the search's starting month */}
-      {showMonth && scrolledMonth && (
-        <Animated.View style={[s.monthRow, { opacity: monthFade }]}>
-          <Text style={s.monthLabel}>{monthBanner(scrolledMonth)}</Text>
-        </Animated.View>
-      )}
-
-      {/* ── Dates + filters ── */}
+      {/* ── Month + dates + filters (collapse together) ── */}
       <Animated.View style={[s.chromeWrap, { height: chromeHeight }]}>
         <Animated.View style={{ transform: [{ translateY: chromeShift }] }}>
+          <Animated.View style={[s.monthRow, { height: monthPad }]}>
+            {monthLabel ? (
+              <Text style={s.monthLabel}>{monthLabel}</Text>
+            ) : null}
+          </Animated.View>
+
           <ScrollView
             ref={dateScrollRef}
             horizontal
@@ -913,11 +940,11 @@ const s = StyleSheet.create({
     height: HEADER_H,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    justifyContent: 'space-between',
     paddingHorizontal: HPAD,
+    gap: spacing.md,
   },
   headerPill: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
@@ -925,10 +952,12 @@ const s = StyleSheet.create({
     borderRadius: radii.full,
     borderWidth: 1,
     borderColor: palette.gray200,
-    paddingRight: spacing.lg,
+    paddingRight: spacing.md,
     paddingLeft: 5,
     paddingVertical: 5,
     minHeight: 52,
+    maxWidth: '82%',
+    flexShrink: 1,
   },
   backInPill: {
     width: 38,
@@ -939,8 +968,9 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   headerCopy: {
-    flex: 1,
+    flexShrink: 1,
     justifyContent: 'center',
+    paddingRight: 2,
   },
   tripTitle: {
     fontSize: 17,
@@ -955,12 +985,7 @@ const s = StyleSheet.create({
     color: palette.gray500,
   },
   editBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: palette.white,
-    borderWidth: 1,
-    borderColor: palette.gray200,
+    padding: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -990,7 +1015,7 @@ const s = StyleSheet.create({
   },
 
   monthRow: {
-    height: MONTH_H,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: palette.gray50,
