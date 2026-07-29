@@ -440,6 +440,8 @@ export default function Home() {
         onApply={(next) => {
           setPax(next);
           setPaxOpen(false);
+          // Continue into booking: airport → dates → flights
+          setTimeout(() => openAirportSearch(), 220);
         }}
       />
 

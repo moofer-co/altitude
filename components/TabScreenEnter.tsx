@@ -3,20 +3,29 @@ import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { palette, radii, spacing } from '../constants/tokens';
 
-export type TabSkeletonVariant = 'explore' | 'trips' | 'saved' | 'account';
+export type PageSkeletonVariant =
+  | 'explore'
+  | 'trips'
+  | 'saved'
+  | 'account'
+  | 'search'
+  | 'dates';
+
+/** @deprecated Prefer PageSkeletonVariant — kept for existing tab imports. */
+export type TabSkeletonVariant = PageSkeletonVariant;
 
 /**
- * Soft page reveal for tab screens.
- * First visit: brief content-shaped skeleton, then dissolve + slight rise.
- * Return visits: light settle only (scene fade handles the crossfade).
+ * Soft page reveal with content-shaped skeleton.
+ * First visit: brief skeleton, then dissolve + slight rise.
+ * Return visits: light settle only.
  */
-export function TabScreenEnter({
+export function PageEnter({
   children,
   variant,
   backgroundColor = palette.white,
 }: {
   children: ReactNode;
-  variant: TabSkeletonVariant;
+  variant: PageSkeletonVariant;
   backgroundColor?: string;
 }) {
   const focused = useIsFocused();
@@ -136,11 +145,14 @@ export function TabScreenEnter({
   );
 }
 
+/** Alias used by tab screens. */
+export const TabScreenEnter = PageEnter;
+
 function Skeleton({
   variant,
   pulse,
 }: {
-  variant: TabSkeletonVariant;
+  variant: PageSkeletonVariant;
   pulse: Animated.Value;
 }) {
   const bone = (extra: object, key: string) => (
@@ -202,6 +214,40 @@ function Skeleton({
             `sc${i}`,
           ),
         )}
+      </View>
+    );
+  }
+
+  if (variant === 'search') {
+    return (
+      <View style={styles.pad}>
+        <View style={styles.row}>
+          {bone({ width: 160, height: 36, borderRadius: 18 }, 'loc')}
+          {bone({ width: 36, height: 36, borderRadius: 18 }, 'x')}
+        </View>
+        {bone({ height: 52, borderRadius: radii.full, marginTop: spacing.lg }, 'q')}
+        {bone({ width: 100, height: 14, marginTop: spacing.xl }, 'lab')}
+        {[0, 1, 2, 3, 4, 5].map((i) =>
+          bone(
+            {
+              height: 56,
+              borderRadius: radii.md,
+              marginTop: spacing.sm,
+            },
+            `a${i}`,
+          ),
+        )}
+      </View>
+    );
+  }
+
+  if (variant === 'dates') {
+    return (
+      <View style={styles.pad}>
+        {bone({ width: 140, height: 28, marginBottom: spacing.md }, 'd0')}
+        {bone({ height: 44, borderRadius: radii.md, marginBottom: spacing.lg }, 'd1')}
+        {bone({ height: 280, borderRadius: radii.lg, marginBottom: spacing.md }, 'cal')}
+        {bone({ height: 52, borderRadius: radii.full, marginTop: spacing.lg }, 'cta')}
       </View>
     );
   }

@@ -1,5 +1,11 @@
-import { useState, useEffect } from 'react';
-import { View, Pressable, StyleSheet, ScrollView } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Pressable,
+  StyleSheet,
+  ScrollView,
+  Animated,
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
 import { palette, spacing, radii } from '../constants/tokens';
@@ -40,6 +46,26 @@ export function PaxSheet({
 
   const error = validatePax(draft);
   const seats = seatsNeeded(draft);
+  const applyScale = useRef(new Animated.Value(1)).current;
+
+  const pressApplyIn = () => {
+    if (error) return;
+    Animated.spring(applyScale, {
+      toValue: 0.96,
+      tension: 280,
+      friction: 16,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const pressApplyOut = () => {
+    Animated.spring(applyScale, {
+      toValue: 1,
+      tension: 220,
+      friction: 12,
+      useNativeDriver: true,
+    }).start();
+  };
 
   const step = (key: keyof PaxMix, delta: number) => {
     setDraft((d) => {
@@ -69,13 +95,23 @@ export function PaxSheet({
       heightRatio={0.72}
       footer={
         <Pressable
-          style={[s.apply, error && s.applyOff]}
           onPress={() => !error && onApply(draft)}
+          onPressIn={pressApplyIn}
+          onPressOut={pressApplyOut}
           disabled={!!error}
         >
-          <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
-            {error ?? `Search for ${totalTravellers(draft)} traveller${totalTravellers(draft) > 1 ? 's' : ''}`}
-          </Text>
+          <Animated.View
+            style={[
+              s.apply,
+              error && s.applyOff,
+              { transform: [{ scale: applyScale }] },
+            ]}
+          >
+            <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
+              {error ??
+                `Search for ${totalTravellers(draft)} traveller${totalTravellers(draft) > 1 ? 's' : ''}`}
+            </Text>
+          </Animated.View>
         </Pressable>
       }
     >

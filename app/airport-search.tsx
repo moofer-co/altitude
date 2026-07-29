@@ -6,8 +6,6 @@ import {
   StyleSheet,
   Keyboard,
   LayoutAnimation,
-  Animated,
-  Easing,
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +15,7 @@ import { Text, Row } from '../components/ui';
 import { AirportAlphabetList } from '../components/AirportAlphabetList';
 import { AirportSearchSheet } from '../components/AirportSearchSheet';
 import { KeyboardBottomPad } from '../components/KeyboardBottomPad';
+import { PageEnter } from '../components/TabScreenEnter';
 import { SCRUBBER_SLOT_W } from '../components/AlphabetScrubber';
 import { palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports, airports } from '../data/airports';
@@ -62,48 +61,13 @@ export default function AirportSearch() {
   const [prefs, setPrefs] = useState(getPreferences);
   const inputRef = useRef<TextInput>(null);
 
-  const listEnter = useRef(new Animated.Value(fromMorph ? 0 : 1)).current;
-  const searchEnter = useRef(new Animated.Value(fromMorph ? 0 : 1)).current;
-  const headerEnter = useRef(new Animated.Value(fromMorph ? 0 : 1)).current;
-
   useEffect(() => subscribePreferences(() => setPrefs(getPreferences())), []);
 
+  // Focus after skeleton dissolve so the keyboard doesn't fight the enter
   useEffect(() => {
-    if (!fromMorph) {
-      const t = setTimeout(() => inputRef.current?.focus(), 120);
-      return () => clearTimeout(t);
-    }
-
-    const ease = Easing.out(Easing.cubic);
-    Animated.sequence([
-      Animated.delay(40),
-      Animated.parallel([
-        Animated.timing(listEnter, {
-          toValue: 1,
-          duration: 360,
-          easing: ease,
-          useNativeDriver: true,
-        }),
-        Animated.timing(searchEnter, {
-          toValue: 1,
-          duration: 320,
-          delay: 60,
-          easing: ease,
-          useNativeDriver: true,
-        }),
-        Animated.timing(headerEnter, {
-          toValue: 1,
-          duration: 340,
-          delay: 200,
-          easing: ease,
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start();
-
-    const focusAt = setTimeout(() => inputRef.current?.focus(), 520);
-    return () => clearTimeout(focusAt);
-  }, [fromMorph, listEnter, searchEnter, headerEnter]);
+    const t = setTimeout(() => inputRef.current?.focus(), fromMorph ? 560 : 480);
+    return () => clearTimeout(t);
+  }, [fromMorph]);
 
   const homeAirport = useMemo(() => {
     return (
@@ -151,7 +115,8 @@ export default function AirportSearch() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <Animated.View style={{ opacity: headerEnter }}>
+      <PageEnter variant="search" backgroundColor={palette.white}>
+      <View>
         <Row justify="space-between" style={styles.header}>
           <Pressable
             style={styles.locationPill}
@@ -192,7 +157,7 @@ export default function AirportSearch() {
             </Pressable>
           </View>
         </Row>
-      </Animated.View>
+      </View>
 
       {selected && (
         <View style={styles.selectedBanner}>
@@ -202,8 +167,7 @@ export default function AirportSearch() {
         </View>
       )}
 
-      {/* Opacity-only entrance — transforms break scrubber hit-testing */}
-      <Animated.View style={[styles.content, { opacity: listEnter }]}>
+      <View style={styles.content}>
         <AirportAlphabetList
           airports={allAirports}
           selectedIata={selected?.iata}
@@ -257,10 +221,9 @@ export default function AirportSearch() {
             </ScrollView>
           </View>
         )}
-      </Animated.View>
+      </View>
 
-      <Animated.View style={{ opacity: searchEnter }}>
-        <KeyboardBottomPad style={styles.searchBarChrome}>
+      <KeyboardBottomPad style={styles.searchBarChrome}>
           <View style={styles.searchBar}>
             <Feather
               name="search"
@@ -290,7 +253,7 @@ export default function AirportSearch() {
             )}
           </View>
         </KeyboardBottomPad>
-      </Animated.View>
+      </PageEnter>
 
       <AirportSearchSheet
         visible={homeOpen}

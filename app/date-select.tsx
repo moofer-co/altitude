@@ -2,6 +2,7 @@ import { StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { DateSelectPicker } from '../components/DateSelectPicker';
+import { PageEnter } from '../components/TabScreenEnter';
 import { palette } from '../constants/tokens';
 
 export default function DateSelect() {
@@ -9,13 +10,15 @@ export default function DateSelect() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <DateSelectPicker
-        confirmLabel="Continue"
-        onConfirm={() => router.push('/flights')}
-        onClose={() => {
-          if (router.canGoBack()) router.back();
-        }}
-      />
+      <PageEnter variant="dates" backgroundColor={palette.white}>
+        <DateSelectPicker
+          confirmLabel="Continue"
+          onConfirm={() => router.push('/flights')}
+          onClose={() => {
+            if (router.canGoBack()) router.back();
+          }}
+        />
+      </PageEnter>
     </SafeAreaView>
   );
 }
