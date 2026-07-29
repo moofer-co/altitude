@@ -14,6 +14,8 @@ import { AlphabetScrubber } from './AlphabetScrubber';
 import { palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports } from '../data/airports';
 import { groupAirportsByLetter, searchAirports } from '../lib/airportSearch';
+import { scrollAirportListToLetter } from '../lib/scrollToLetter';
+import { useKeyboardLift } from '../hooks/useKeyboardLift';
 import type { Airport } from '../types';
 
 function HighlightedText({ text, highlight }: { text: string; highlight: string }) {
@@ -55,10 +57,13 @@ export function AirportSearchSheet({
   const [query, setQuery] = useState('');
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<SectionList<Airport>>(null);
+  const pendingLetter = useRef<string | null>(null);
+  const keyboardLift = useKeyboardLift();
 
   useEffect(() => {
     if (!visible) return;
     setQuery('');
+    pendingLetter.current = null;
     const t = setTimeout(() => inputRef.current?.focus(), 350);
     return () => clearTimeout(t);
   }, [visible]);
@@ -74,6 +79,26 @@ export function AirportSearchSheet({
     [sections],
   );
 
+  const scrollToLetter = useCallback(
+    (letter: string) => {
+      scrollAirportListToLetter(listRef, sections, letter);
+    },
+    [sections],
+  );
+
+  useEffect(() => {
+    if (isSearching || !pendingLetter.current) return;
+    const letter = pendingLetter.current;
+    pendingLetter.current = null;
+    const t = setTimeout(() => scrollToLetter(letter), 32);
+    return () => clearTimeout(t);
+  }, [isSearching, scrollToLetter]);
+
+  const beginScrub = useCallback(() => {
+    Keyboard.dismiss();
+    inputRef.current?.blur();
+  }, []);
+
   const handleSelect = useCallback(
     (airport: Airport) => {
       Keyboard.dismiss();
@@ -85,17 +110,16 @@ export function AirportSearchSheet({
 
   const handleScrubberSelect = useCallback(
     (letter: string) => {
-      const sectionIndex = sections.findIndex((s) => s.title === letter);
-      if (sectionIndex >= 0 && listRef.current) {
-        listRef.current.scrollToLocation({
-          sectionIndex,
-          itemIndex: 0,
-          viewOffset: 40,
-          animated: false,
-        });
+      Keyboard.dismiss();
+      inputRef.current?.blur();
+      if (query.length > 0) {
+        pendingLetter.current = letter;
+        setQuery('');
+        return;
       }
+      scrollToLetter(letter);
     },
-    [sections],
+    [query, scrollToLetter],
   );
 
   return (
@@ -107,52 +131,53 @@ export function AirportSearchSheet({
       heightRatio={0.94}
     >
       <View style={styles.content}>
-        {isSearching ? (
-          <View style={styles.searchResults}>
-            {searchResults.length > 0 ? (
-              <>
-                <Text
-                  variant="caption"
-                  color="textTertiary"
-                  style={styles.didYouMean}
-                >
-                  Did you mean
-                </Text>
-                {searchResults.map((airport) => (
-                  <Pressable
-                    key={`${airport.iata}-${airport.city}`}
-                    style={({ pressed }) => [
-                      styles.resultRow,
-                      pressed && styles.resultRowPressed,
-                      selectedIata === airport.iata && styles.rowSelected,
-                    ]}
-                    onPress={() => handleSelect(airport)}
+        <View style={styles.listContainer}>
+          {isSearching ? (
+            <View style={styles.searchResults}>
+              {searchResults.length > 0 ? (
+                <>
+                  <Text
+                    variant="caption"
+                    color="textTertiary"
+                    style={styles.didYouMean}
                   >
-                    <HighlightedText
-                      text={`${airport.city} (${airport.iata})`}
-                      highlight={query}
-                    />
-                    {selectedIata === airport.iata && (
-                      <Feather name="check" size={18} color={palette.primary600} />
-                    )}
-                  </Pressable>
-                ))}
-              </>
-            ) : (
-              <View style={styles.noResults}>
-                <Text variant="body" color="textTertiary" align="center">
-                  No airports found
-                </Text>
-                <Text variant="caption" color="textTertiary" align="center">
-                  Try a different city or airport code
-                </Text>
-              </View>
-            )}
-          </View>
-        ) : (
-          <View style={styles.listContainer}>
+                    Did you mean
+                  </Text>
+                  {searchResults.map((airport) => (
+                    <Pressable
+                      key={`${airport.iata}-${airport.city}`}
+                      style={({ pressed }) => [
+                        styles.resultRow,
+                        pressed && styles.resultRowPressed,
+                        selectedIata === airport.iata && styles.rowSelected,
+                      ]}
+                      onPress={() => handleSelect(airport)}
+                    >
+                      <HighlightedText
+                        text={`${airport.city} (${airport.iata})`}
+                        highlight={query}
+                      />
+                      {selectedIata === airport.iata && (
+                        <Feather name="check" size={18} color={palette.primary600} />
+                      )}
+                    </Pressable>
+                  ))}
+                </>
+              ) : (
+                <View style={styles.noResults}>
+                  <Text variant="body" color="textTertiary" align="center">
+                    No airports found
+                  </Text>
+                  <Text variant="caption" color="textTertiary" align="center">
+                    Try a different city or airport code
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : (
             <SectionList
               ref={listRef}
+              style={styles.list}
               sections={sections}
               keyExtractor={(item, index) => `${item.iata}-${item.city}-${index}`}
               renderItem={({ item }) => (
@@ -179,17 +204,27 @@ export function AirportSearchSheet({
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.listContent}
               keyboardShouldPersistTaps="handled"
-              onScrollToIndexFailed={() => {}}
+              keyboardDismissMode="on-drag"
+              onScrollToIndexFailed={(info) => {
+                const y = Math.max(
+                  0,
+                  info.averageItemLength * info.highestMeasuredFrameIndex,
+                );
+                listRef.current
+                  ?.getScrollResponder()
+                  ?.scrollTo({ y, animated: false });
+              }}
             />
-            <AlphabetScrubber
-              activeLetters={activeLetters}
-              onSelect={handleScrubberSelect}
-            />
-          </View>
-        )}
+          )}
+          <AlphabetScrubber
+            activeLetters={activeLetters}
+            onScrubStart={beginScrub}
+            onSelect={handleScrubberSelect}
+          />
+        </View>
       </View>
 
-      <View style={styles.searchBar}>
+      <View style={[styles.searchBar, { marginBottom: spacing.md + keyboardLift }]}>
         <Feather
           name="search"
           size={18}
@@ -230,6 +265,7 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
 
   listContainer: { flex: 1, flexDirection: 'row' },
+  list: { flex: 1 },
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
@@ -292,7 +328,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
     marginTop: spacing.sm,
     backgroundColor: palette.gray50,
     borderRadius: radii.full,

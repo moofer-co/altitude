@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useMemo } from 'react';
+import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import { palette, radii, shadows } from '../constants/tokens';
 /** Z→A — matches the airport list grouping. */
 export const LETTERS_ZA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').reverse();
 
-const TRACK_W = 28;
+const TRACK_W = 32;
 const BUBBLE = 56;
 const BASE_SIZE = 11;
 /** How many letters either side of the focus get fisheye scale. */
@@ -28,10 +28,13 @@ const MAG_RADIUS = 2;
 export function AlphabetScrubber({
   activeLetters,
   onSelect,
+  onScrubStart,
   letters = LETTERS_ZA,
 }: {
   activeLetters: Set<string>;
   onSelect: (letter: string) => void;
+  /** Fired on touch-down — dismiss keyboard before scrolling. */
+  onScrubStart?: () => void;
   letters?: string[];
 }) {
   const [height, setHeight] = useState(0);
@@ -126,21 +129,37 @@ export function AlphabetScrubber({
     hideBubble();
   }, [animateScales, hideBubble]);
 
+  // Keep pan handlers on fresh closures — PanResponder is created once
+  const indexFromYRef = useRef(indexFromY);
+  const selectAtRef = useRef(selectAt);
+  const endScrubRef = useRef(endScrub);
+  const onScrubStartRef = useRef(onScrubStart);
+  useEffect(() => {
+    indexFromYRef.current = indexFromY;
+    selectAtRef.current = selectAt;
+    endScrubRef.current = endScrub;
+    onScrubStartRef.current = onScrubStart;
+  }, [indexFromY, selectAt, endScrub, onScrubStart]);
+
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (e) => {
+        onScrubStartRef.current?.();
         setScrubbing(true);
-        const idx = indexFromY(e.nativeEvent.locationY);
-        selectAt(idx, true);
+        const idx = indexFromYRef.current(e.nativeEvent.locationY);
+        selectAtRef.current(idx, true);
       },
       onPanResponderMove: (e) => {
-        const idx = indexFromY(e.nativeEvent.locationY);
-        selectAt(idx, true);
+        const idx = indexFromYRef.current(e.nativeEvent.locationY);
+        selectAtRef.current(idx, true);
       },
-      onPanResponderRelease: endScrub,
-      onPanResponderTerminate: endScrub,
+      onPanResponderRelease: () => endScrubRef.current(),
+      onPanResponderTerminate: () => endScrubRef.current(),
     }),
   ).current;
 
@@ -154,7 +173,6 @@ export function AlphabetScrubber({
 
   return (
     <View style={styles.wrap} pointerEvents="box-none">
-      {/* Floating lens — sits left of the index, Apple Contacts style */}
       <Animated.View
         pointerEvents="none"
         style={[
@@ -214,9 +232,11 @@ export function AlphabetScrubber({
 const styles = StyleSheet.create({
   wrap: {
     width: TRACK_W,
+    alignSelf: 'stretch',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 5,
+    zIndex: 8,
+    elevation: 8,
   },
   track: {
     width: TRACK_W,

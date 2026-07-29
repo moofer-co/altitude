@@ -24,6 +24,8 @@ import {
   subscribePreferences,
 } from '../data/account';
 import { groupAirportsByLetter, searchAirports } from '../lib/airportSearch';
+import { scrollAirportListToLetter } from '../lib/scrollToLetter';
+import { useKeyboardLift } from '../hooks/useKeyboardLift';
 import type { Airport } from '../types';
 
 function HighlightedText({ text, highlight }: { text: string; highlight: string }) {
@@ -53,6 +55,7 @@ export default function AirportSearch() {
   const router = useRouter();
   const { morph } = useLocalSearchParams<{ morph?: string }>();
   const fromMorph = morph === '1';
+  const keyboardLift = useKeyboardLift();
 
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Airport | null>(null);
@@ -60,6 +63,7 @@ export default function AirportSearch() {
   const [prefs, setPrefs] = useState(getPreferences);
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<SectionList<Airport>>(null);
+  const pendingLetter = useRef<string | null>(null);
 
   // Staged entrance: list → search field → home airport pill
   const listEnter = useRef(new Animated.Value(fromMorph ? 0 : 1)).current;
@@ -92,7 +96,6 @@ export default function AirportSearch() {
           easing: ease,
           useNativeDriver: true,
         }),
-        // Home airport pill arrives last — soft settle
         Animated.timing(headerEnter, {
           toValue: 1,
           duration: 340,
@@ -126,6 +129,27 @@ export default function AirportSearch() {
     [sections],
   );
 
+  const scrollToLetter = useCallback(
+    (letter: string) => {
+      scrollAirportListToLetter(listRef, sections, letter);
+    },
+    [sections],
+  );
+
+  // After clearing search for a scrub, scroll once the list is back
+  useEffect(() => {
+    if (isSearching || !pendingLetter.current) return;
+    const letter = pendingLetter.current;
+    pendingLetter.current = null;
+    const t = setTimeout(() => scrollToLetter(letter), 32);
+    return () => clearTimeout(t);
+  }, [isSearching, scrollToLetter]);
+
+  const beginScrub = useCallback(() => {
+    Keyboard.dismiss();
+    inputRef.current?.blur();
+  }, []);
+
   const handleSelect = useCallback((airport: Airport) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSelected(airport);
@@ -134,17 +158,16 @@ export default function AirportSearch() {
 
   const handleScrubberSelect = useCallback(
     (letter: string) => {
-      const sectionIndex = sections.findIndex((s) => s.title === letter);
-      if (sectionIndex >= 0 && listRef.current) {
-        listRef.current.scrollToLocation({
-          sectionIndex,
-          itemIndex: 0,
-          viewOffset: 40,
-          animated: false,
-        });
+      Keyboard.dismiss();
+      inputRef.current?.blur();
+      if (query.length > 0) {
+        pendingLetter.current = letter;
+        setQuery('');
+        return;
       }
+      scrollToLetter(letter);
     },
-    [sections],
+    [query, scrollToLetter],
   );
 
   const handleClear = useCallback(() => {
@@ -157,7 +180,10 @@ export default function AirportSearch() {
     : prefs.homeAirport;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView
+      style={[styles.safe, keyboardLift > 0 && { marginBottom: keyboardLift }]}
+      edges={['top', 'bottom']}
+    >
       <Animated.View
         style={{
           opacity: headerEnter,
@@ -221,48 +247,49 @@ export default function AirportSearch() {
           },
         ]}
       >
-        {isSearching ? (
-          <View style={styles.searchResults}>
-            {searchResults.length > 0 ? (
-              <>
-                <Text
-                  variant="caption"
-                  color="textTertiary"
-                  style={styles.didYouMean}
-                >
-                  Did you mean
-                </Text>
-                {searchResults.map((airport) => (
-                  <Pressable
-                    key={`${airport.iata}-${airport.city}`}
-                    style={({ pressed }) => [
-                      styles.resultRow,
-                      pressed && styles.resultRowPressed,
-                    ]}
-                    onPress={() => handleSelect(airport)}
+        <View style={styles.listContainer}>
+          {isSearching ? (
+            <View style={styles.searchResults}>
+              {searchResults.length > 0 ? (
+                <>
+                  <Text
+                    variant="caption"
+                    color="textTertiary"
+                    style={styles.didYouMean}
                   >
-                    <HighlightedText
-                      text={`${airport.city} (${airport.iata})`}
-                      highlight={query}
-                    />
-                  </Pressable>
-                ))}
-              </>
-            ) : (
-              <View style={styles.noResults}>
-                <Text variant="body" color="textTertiary" align="center">
-                  No airports found
-                </Text>
-                <Text variant="caption" color="textTertiary" align="center">
-                  Try a different city or airport code
-                </Text>
-              </View>
-            )}
-          </View>
-        ) : (
-          <View style={styles.listContainer}>
+                    Did you mean
+                  </Text>
+                  {searchResults.map((airport) => (
+                    <Pressable
+                      key={`${airport.iata}-${airport.city}`}
+                      style={({ pressed }) => [
+                        styles.resultRow,
+                        pressed && styles.resultRowPressed,
+                      ]}
+                      onPress={() => handleSelect(airport)}
+                    >
+                      <HighlightedText
+                        text={`${airport.city} (${airport.iata})`}
+                        highlight={query}
+                      />
+                    </Pressable>
+                  ))}
+                </>
+              ) : (
+                <View style={styles.noResults}>
+                  <Text variant="body" color="textTertiary" align="center">
+                    No airports found
+                  </Text>
+                  <Text variant="caption" color="textTertiary" align="center">
+                    Try a different city or airport code
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : (
             <SectionList
               ref={listRef}
+              style={styles.list}
               sections={sections}
               keyExtractor={(item, index) => `${item.iata}-${item.city}-${index}`}
               renderItem={({ item }) => (
@@ -285,14 +312,24 @@ export default function AirportSearch() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.listContent}
               keyboardShouldPersistTaps="handled"
-              onScrollToIndexFailed={() => {}}
+              keyboardDismissMode="on-drag"
+              onScrollToIndexFailed={(info) => {
+                const y = Math.max(
+                  0,
+                  info.averageItemLength * info.highestMeasuredFrameIndex,
+                );
+                listRef.current
+                  ?.getScrollResponder()
+                  ?.scrollTo({ y, animated: false });
+              }}
             />
-            <AlphabetScrubber
-              activeLetters={activeLetters}
-              onSelect={handleScrubberSelect}
-            />
-          </View>
-        )}
+          )}
+          <AlphabetScrubber
+            activeLetters={activeLetters}
+            onScrubStart={beginScrub}
+            onSelect={handleScrubberSelect}
+          />
+        </View>
       </Animated.View>
 
       <Animated.View
@@ -404,6 +441,9 @@ const styles = StyleSheet.create({
   listContainer: {
     flex: 1,
     flexDirection: 'row',
+  },
+  list: {
+    flex: 1,
   },
   listContent: {
     paddingHorizontal: spacing.lg,
