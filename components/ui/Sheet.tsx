@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from './Text';
 import { palette, spacing, radii, shadows } from '../../constants/tokens';
+import { useKeyboardLift } from '../../hooks/useKeyboardLift';
 
 const { height: SH } = Dimensions.get('window');
 const HPAD = spacing.lg;
@@ -21,6 +22,9 @@ const HPAD = spacing.lg;
  *
  * The drag handler lives on the header only — putting it on the whole sheet
  * fights any scrollable content inside.
+ *
+ * When the keyboard is open the sheet lifts (and shrinks) so footers / CTAs
+ * stay visible — e.g. Booking → Add passenger → Save passenger.
  */
 export function Sheet({
   visible,
@@ -42,8 +46,15 @@ export function Sheet({
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
+  const keyboardLift = useKeyboardLift();
   const height = SH * heightRatio;
   const translateY = useRef(new Animated.Value(height)).current;
+
+  // Keep the sheet above the keyboard without overflowing the top of the screen
+  const sheetHeight = Math.min(
+    height + insets.bottom,
+    Math.max(280, SH - keyboardLift),
+  );
 
   useEffect(() => {
     if (visible) {
@@ -101,7 +112,11 @@ export function Sheet({
         <Animated.View
           style={[
             s.sheet,
-            { height: height + insets.bottom, transform: [{ translateY }] },
+            {
+              height: sheetHeight,
+              marginBottom: keyboardLift,
+              transform: [{ translateY }],
+            },
           ]}
         >
           <View {...pan.panHandlers} style={s.head}>
@@ -125,7 +140,15 @@ export function Sheet({
           <View style={{ flex: 1 }}>{children}</View>
 
           {footer && (
-            <View style={[s.footer, { paddingBottom: insets.bottom + spacing.md }]}>
+            <View
+              style={[
+                s.footer,
+                {
+                  paddingBottom:
+                    keyboardLift > 0 ? spacing.md : insets.bottom + spacing.md,
+                },
+              ]}
+            >
               {footer}
             </View>
           )}
