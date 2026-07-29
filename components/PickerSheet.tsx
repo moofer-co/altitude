@@ -62,6 +62,8 @@ export function PickerSheet({
         contentContainerStyle={s.list}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
       >
         {filtered.map((opt) => {
           const on = opt === selected;

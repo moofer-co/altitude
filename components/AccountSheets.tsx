@@ -158,6 +158,8 @@ export function ProfileSheet({
           contentContainerStyle={s.body}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
         >
           <FieldAlert count={Object.keys(errors).length} />
 
@@ -355,6 +357,8 @@ export function TravellerSheet({
           contentContainerStyle={s.body}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
         >
           <FieldAlert count={Object.keys(errors).length} />
 
@@ -849,6 +853,8 @@ export function PaymentMethodSheet({
         contentContainerStyle={s.body}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
       >
         <FieldAlert count={Object.keys(errors).length} />
 

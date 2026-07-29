@@ -212,6 +212,8 @@ export function LoyaltySheet({
           contentContainerStyle={s.body}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
         >
           {program && (
             <View style={[s.programChip, { backgroundColor: program.color + '18' }]}>

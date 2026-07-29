@@ -8,13 +8,15 @@ import {
   LayoutAnimation,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
 import { palette, spacing, radii, typography, shadows } from '../constants/tokens';
 import { PassengerSheet } from '../components/PassengerSheet';
 import { ExtrasSheet, type ExtraKind } from '../components/ExtrasSheet';
 import { SeatSheet } from '../components/SeatSheet';
+import { KeyboardBottomPad } from '../components/KeyboardBottomPad';
+import { useKeyboardLift } from '../hooks/useKeyboardLift';
 import {
   emptyPassenger,
   passengerName,
@@ -83,7 +85,6 @@ let seq = 0;
 const nextId = () => `p${++seq}`;
 
 export default function Booking() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ airline?: string }>();
   const airlineParam = typeof params.airline === 'string' ? params.airline : '6E';
@@ -117,6 +118,7 @@ export default function Booking() {
   useEffect(() => subscribeLoyalty(() => setLinked(getLinkedLoyalty())), []);
 
   const scrollRef = useRef<ScrollView>(null);
+  const keyboardLift = useKeyboardLift();
 
   const animate = () =>
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -309,9 +311,13 @@ export default function Booking() {
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
-        contentContainerStyle={s.scroll}
+        contentContainerStyle={[
+          s.scroll,
+          keyboardLift > 0 && { paddingBottom: spacing.xl + 24 },
+        ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {/* ── Flight, kept quiet ── */}
         <Pressable
@@ -694,51 +700,53 @@ export default function Booking() {
       )}
 
       {/* ── Pay ── */}
-      <View style={[s.bar, { paddingBottom: insets.bottom + spacing.md }]}>
-        <Pressable
-          style={{ flex: 1 }}
-          onPress={() => {
-            animate();
-            setPriceOpen((v) => !v);
-          }}
-          disabled={passengers.length === 0}
-        >
-          <View style={s.totalRow}>
-            <Text variant="caption" color="textTertiary">
-              {redeemValue > 0 ? 'You pay' : 'Total'}
+      <KeyboardBottomPad style={s.barChrome}>
+        <View style={s.bar}>
+          <Pressable
+            style={{ flex: 1 }}
+            onPress={() => {
+              animate();
+              setPriceOpen((v) => !v);
+            }}
+            disabled={passengers.length === 0}
+          >
+            <View style={s.totalRow}>
+              <Text variant="caption" color="textTertiary">
+                {redeemValue > 0 ? 'You pay' : 'Total'}
+              </Text>
+              {passengers.length > 0 && (
+                <Feather
+                  name={priceOpen ? 'chevron-down' : 'chevron-up'}
+                  size={13}
+                  color={palette.gray500}
+                />
+              )}
+            </View>
+            <Text style={s.total}>
+              ₹{passengers.length === 0 ? '—' : payable.toLocaleString()}
             </Text>
-            {passengers.length > 0 && (
-              <Feather
-                name={priceOpen ? 'chevron-down' : 'chevron-up'}
-                size={13}
-                color={palette.gray500}
-              />
-            )}
-          </View>
-          <Text style={s.total}>
-            ₹{passengers.length === 0 ? '—' : payable.toLocaleString()}
-          </Text>
-        </Pressable>
+          </Pressable>
 
-        <Pressable
-          style={[s.pay, blocker && s.payBlocked]}
-          onPress={handlePay}
-        >
-          <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
-            {blocker ? 'Continue' : `Pay ₹${payable.toLocaleString()}`}
-          </Text>
-          {!blocker && <Feather name="arrow-right" size={17} color={palette.white} />}
-        </Pressable>
-      </View>
-
-      {blocker && attempted && (
-        <View style={[s.blockerBar, { paddingBottom: insets.bottom }]}>
-          <Feather name="alert-circle" size={14} color={palette.white} />
-          <Text variant="caption" style={{ color: palette.white, flex: 1 }}>
-            {blocker.message}
-          </Text>
+          <Pressable
+            style={[s.pay, blocker && s.payBlocked]}
+            onPress={handlePay}
+          >
+            <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
+              {blocker ? 'Continue' : `Pay ₹${payable.toLocaleString()}`}
+            </Text>
+            {!blocker && <Feather name="arrow-right" size={17} color={palette.white} />}
+          </Pressable>
         </View>
-      )}
+
+        {blocker && attempted && (
+          <View style={s.blockerBar}>
+            <Feather name="alert-circle" size={14} color={palette.white} />
+            <Text variant="caption" style={{ color: palette.white, flex: 1 }}>
+              {blocker.message}
+            </Text>
+          </View>
+        )}
+      </KeyboardBottomPad>
 
       {/* ── Sheets ── */}
       <PassengerSheet
@@ -1113,16 +1121,20 @@ const s = StyleSheet.create({
   },
 
   // Pay bar
+  barChrome: {
+    backgroundColor: palette.white,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: palette.gray200,
+    ...shadows.floating,
+  },
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     paddingHorizontal: HPAD,
     paddingTop: spacing.md,
+    paddingBottom: spacing.md,
     backgroundColor: palette.white,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: palette.gray200,
-    ...shadows.floating,
   },
   totalRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   total: { fontSize: 22, fontWeight: '700', color: palette.gray900, lineHeight: 27 },
@@ -1144,7 +1156,7 @@ const s = StyleSheet.create({
     gap: spacing.sm,
     backgroundColor: palette.warningDark,
     paddingHorizontal: HPAD,
-    paddingTop: spacing.sm,
+    paddingVertical: spacing.sm,
   },
 
   // Confirmation

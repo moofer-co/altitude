@@ -10,12 +10,13 @@ import {
   Easing,
   ScrollView,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, Row } from '../components/ui';
 import { AirportAlphabetList } from '../components/AirportAlphabetList';
 import { AirportSearchSheet } from '../components/AirportSearchSheet';
+import { KeyboardBottomPad } from '../components/KeyboardBottomPad';
 import { SCRUBBER_SLOT_W } from '../components/AlphabetScrubber';
 import { palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports, airports } from '../data/airports';
@@ -25,7 +26,6 @@ import {
   subscribePreferences,
 } from '../data/account';
 import { searchAirports } from '../lib/airportSearch';
-import { useKeyboardLift } from '../hooks/useKeyboardLift';
 import type { Airport } from '../types';
 
 function HighlightedText({ text, highlight }: { text: string; highlight: string }) {
@@ -55,8 +55,6 @@ export default function AirportSearch() {
   const router = useRouter();
   const { morph } = useLocalSearchParams<{ morph?: string }>();
   const fromMorph = morph === '1';
-  const keyboardLift = useKeyboardLift();
-  const insets = useSafeAreaInsets();
 
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Airport | null>(null);
@@ -238,42 +236,36 @@ export default function AirportSearch() {
       </Animated.View>
 
       <Animated.View style={{ opacity: searchEnter }}>
-        <View
-          style={[
-            styles.searchBar,
-            {
-              paddingBottom:
-                spacing.sm + (keyboardLift > 0 ? keyboardLift : insets.bottom),
-            },
-          ]}
-        >
-          <Feather
-            name="search"
-            size={18}
-            color={palette.gray400}
-            style={styles.searchIcon}
-          />
-          <TextInput
-            ref={inputRef}
-            style={styles.searchInput}
-            placeholder="Where to next?"
-            placeholderTextColor={palette.gray400}
-            value={query}
-            onChangeText={(text) => {
-              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-              setQuery(text);
-            }}
-            selectionColor={palette.primary500}
-            autoFocus={false}
-            returnKeyType="search"
-            autoCorrect={false}
-          />
-          {query.length > 0 && (
-            <Pressable onPress={handleClear} hitSlop={8}>
-              <Feather name="x-circle" size={18} color={palette.gray400} />
-            </Pressable>
-          )}
-        </View>
+        <KeyboardBottomPad style={styles.searchBarChrome}>
+          <View style={styles.searchBar}>
+            <Feather
+              name="search"
+              size={18}
+              color={palette.gray400}
+              style={styles.searchIcon}
+            />
+            <TextInput
+              ref={inputRef}
+              style={styles.searchInput}
+              placeholder="Where to next?"
+              placeholderTextColor={palette.gray400}
+              value={query}
+              onChangeText={(text) => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setQuery(text);
+              }}
+              selectionColor={palette.primary500}
+              autoFocus={false}
+              returnKeyType="search"
+              autoCorrect={false}
+            />
+            {query.length > 0 && (
+              <Pressable onPress={handleClear} hitSlop={8}>
+                <Feather name="x-circle" size={18} color={palette.gray400} />
+              </Pressable>
+            )}
+          </View>
+        </KeyboardBottomPad>
       </Animated.View>
 
       <AirportSearchSheet
@@ -382,13 +374,17 @@ const styles = StyleSheet.create({
     color: palette.gray900,
   },
 
+  searchBarChrome: {
+    backgroundColor: palette.white,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: palette.gray200,
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: palette.gray200,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
     backgroundColor: palette.white,
     gap: spacing.sm,
   },

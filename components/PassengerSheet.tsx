@@ -142,6 +142,7 @@ export function PassengerSheet({
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
         >
           {submitted && totalErrors > 0 && (
             <View style={s.alert}>

@@ -292,6 +292,8 @@ export function CheckInSheet({
         contentContainerStyle={s.body}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
       >
         {/* ── Who ── */}
         {step === 'select' && allDone && (

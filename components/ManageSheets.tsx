@@ -217,7 +217,9 @@ export function TravellerUpdateSheet({
         ) : undefined
       }
     >
-      <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets>
         {editing ? (
           <>
             <Text variant="caption" color="textSecondary" style={{ marginBottom: 7 }}>
