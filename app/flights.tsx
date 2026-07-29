@@ -241,8 +241,8 @@ export default function Flights() {
       Animated.spring(pill, {
         toValue: to,
         useNativeDriver: true,
-        tension: 90,
-        friction: 14,
+        tension: to === 0 ? 48 : 90,
+        friction: to === 0 ? 12 : 14,
       }).start(),
     [pill],
   );
@@ -253,10 +253,10 @@ export default function Flights() {
       const y = contentOffset.y;
       const maxScroll = Math.max(0, contentSize.height - layoutMeasurement.height);
 
-      // While the finger is moving, tuck the sort bar away; idle brings it back.
+      // Hide sort while scrolling; wait a beat after stop before it returns
       if (idle.current) clearTimeout(idle.current);
       runPill(120);
-      idle.current = setTimeout(() => runPill(0), 420);
+      idle.current = setTimeout(() => runPill(0), 1100);
 
       if (maxScroll < CHROME_BASE + 140) {
         lastY.current = y;
@@ -1018,13 +1018,15 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: palette.gray50,
+    backgroundColor: palette.gray200,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: palette.gray300,
   },
   monthLabel: {
     fontSize: 11,
-    fontWeight: '600',
-    color: palette.gray400,
-    letterSpacing: 1.2,
+    fontWeight: '700',
+    color: palette.gray600,
+    letterSpacing: 1.4,
   },
 
   chromeWrap: { overflow: 'hidden', backgroundColor: palette.gray50, zIndex: 10 },
