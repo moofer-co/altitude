@@ -49,14 +49,18 @@ const DATE_CHIP_W = (SW - HPAD * 2) / DATES_VISIBLE;
 const DATE_CHIP_GAP = 0;
 
 const HEADER_H = 64;
-const MONTH_H = 28;
+const MONTH_H = 26;
 const DATE_H = 82;
 const FILTER_H = 60;
-const CHROME_H = MONTH_H + DATE_H + FILTER_H;
+/** Month sits above the chrome and only mounts when the scrolled month differs. */
+const CHROME_H = DATE_H + FILTER_H;
 
 const MAX_COMPARE = 3;
 const HESITATION_THRESHOLD = 4;
 const HESITATION_DELAY = 28000;
+
+const DESTINATION_CITY = 'Bengaluru';
+const BASE_MONTH_KEY = `${dateStrip[0].monthFull}-${dateStrip[0].year}`;
 
 type SortMode = 'price' | 'stops' | 'time';
 
@@ -75,13 +79,20 @@ function formatHeaderDate(d: (typeof dateStrip)[number]) {
   return `${wd}, ${d.date} ${d.month}`;
 }
 
+function monthKey(d: (typeof dateStrip)[number]) {
+  return `${d.monthFull}-${d.year}`;
+}
+
+function monthBanner(d: (typeof dateStrip)[number]) {
+  return `${d.monthFull.toUpperCase()} ${d.year}`;
+}
+
 export default function Flights() {
   const router = useRouter();
   const [pax, setPax] = useState<PaxMix>(defaultPax);
   const [dateIndex, setDateIndex] = useState(0);
-  const [visibleMonth, setVisibleMonth] = useState(
-    `${dateStrip[0].monthFull} ${dateStrip[0].year}`,
-  );
+  /** Month currently under the left edge of the strip — null means still the search month. */
+  const [scrolledMonth, setScrolledMonth] = useState<(typeof dateStrip)[number] | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('price');
   const [filters, setFilters] = useState<FlightFilters>(emptyFlightFilters);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -106,7 +117,7 @@ export default function Flights() {
   const signals = useRef(0);
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dateScrollRef = useRef<ScrollView>(null);
-  const monthFade = useRef(new Animated.Value(1)).current;
+  const monthFade = useRef(new Animated.Value(0)).current;
 
   const selectedDate = dateStrip[dateIndex] ?? dateStrip[0];
   const lowestPrice = useMemo(
@@ -114,18 +125,21 @@ export default function Flights() {
     [],
   );
 
-  const setMonthLabel = useCallback(
-    (label: string) => {
-      setVisibleMonth((prev) => {
-        if (prev === label) return prev;
-        monthFade.setValue(0.35);
+  const showMonth =
+    !!scrolledMonth && monthKey(scrolledMonth) !== BASE_MONTH_KEY;
+
+  const revealMonth = useCallback(
+    (d: (typeof dateStrip)[number]) => {
+      const changed = monthKey(d) !== BASE_MONTH_KEY;
+      setScrolledMonth(changed ? d : null);
+      if (changed) {
+        monthFade.setValue(0);
         Animated.timing(monthFade, {
           toValue: 1,
-          duration: 220,
+          duration: 200,
           useNativeDriver: true,
         }).start();
-        return label;
-      });
+      }
     },
     [monthFade],
   );
@@ -137,24 +151,22 @@ export default function Flights() {
         0,
         Math.min(dateStrip.length - 1, Math.round(x / DATE_CHIP_W)),
       );
-      const d = dateStrip[idx];
-      setMonthLabel(`${d.monthFull} ${d.year}`);
+      revealMonth(dateStrip[idx]);
     },
-    [setMonthLabel],
+    [revealMonth],
   );
 
   const selectDate = useCallback(
     (i: number) => {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setDateIndex(i);
-      const d = dateStrip[i];
-      setMonthLabel(`${d.monthFull} ${d.year}`);
+      revealMonth(dateStrip[i]);
       dateScrollRef.current?.scrollTo({
         x: Math.max(0, (i - Math.floor(DATES_VISIBLE / 2)) * DATE_CHIP_W),
         animated: true,
       });
     },
-    [setMonthLabel],
+    [revealMonth],
   );
 
   // ── Chrome animation ──
@@ -392,29 +404,29 @@ export default function Flights() {
         style={[s.headerWrap, { height: headerHeight, opacity: headerOpacity }]}
       >
         <View style={s.header}>
-          <Pressable
-            style={s.iconBtn}
-            onPress={() => {
-              if (router.canGoBack()) router.back();
-            }}
-            hitSlop={6}
-          >
-            <Feather name="chevron-left" size={20} color={palette.gray900} />
-          </Pressable>
-
-          <View style={s.headerCenter}>
-            <View style={s.routeRow}>
-              <Text style={s.route}>DEL</Text>
-              <Feather name="arrow-right" size={14} color={palette.gray400} />
-              <Text style={s.route}>BLR</Text>
+          <View style={s.headerPill}>
+            <Pressable
+              style={s.backInPill}
+              onPress={() => {
+                if (router.canGoBack()) router.back();
+              }}
+              hitSlop={6}
+            >
+              <Feather name="chevron-left" size={20} color={palette.gray900} />
+            </Pressable>
+            <View style={s.headerCopy}>
+              <Text style={s.tripTitle} numberOfLines={1}>
+                <Text style={s.tripCity}>{DESTINATION_CITY}</Text>
+                <Text style={s.tripSuffix}> Trip</Text>
+              </Text>
+              <Text variant="caption" color="textSecondary" numberOfLines={1}>
+                {formatHeaderDate(selectedDate)} · {shortPax(pax).toUpperCase()}
+              </Text>
             </View>
-            <Text variant="caption" color="textSecondary" numberOfLines={1}>
-              {formatHeaderDate(selectedDate)} · {shortPax(pax)}
-            </Text>
           </View>
 
-          <Pressable style={s.iconBtn} onPress={() => setPaxOpen(true)} hitSlop={6}>
-            <Feather name="edit-2" size={16} color={palette.gray900} />
+          <Pressable style={s.editBtn} onPress={() => setPaxOpen(true)} hitSlop={6}>
+            <Feather name="edit-2" size={16} color={palette.primary600} />
           </Pressable>
         </View>
       </Animated.View>
@@ -444,16 +456,16 @@ export default function Flights() {
         </View>
       </Animated.View>
 
-      {/* ── Month + dates + filters ── */}
+      {/* Month only after leaving the search's starting month */}
+      {showMonth && scrolledMonth && (
+        <Animated.View style={[s.monthRow, { opacity: monthFade }]}>
+          <Text style={s.monthLabel}>{monthBanner(scrolledMonth)}</Text>
+        </Animated.View>
+      )}
+
+      {/* ── Dates + filters ── */}
       <Animated.View style={[s.chromeWrap, { height: chromeHeight }]}>
         <Animated.View style={{ transform: [{ translateY: chromeShift }] }}>
-          <Animated.View style={[s.monthRow, { opacity: monthFade }]}>
-            <Text style={s.monthLabel}>{visibleMonth}</Text>
-            <Text variant="caption" color="textTertiary">
-              Scroll for more dates
-            </Text>
-          </Animated.View>
-
           <ScrollView
             ref={dateScrollRef}
             horizontal
@@ -904,7 +916,45 @@ const s = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: HPAD,
   },
-  iconBtn: {
+  headerPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: palette.white,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: palette.gray200,
+    paddingRight: spacing.lg,
+    paddingLeft: 5,
+    paddingVertical: 5,
+    minHeight: 52,
+  },
+  backInPill: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: palette.gray100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCopy: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  tripTitle: {
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  tripCity: {
+    fontWeight: '700',
+    color: palette.gray900,
+  },
+  tripSuffix: {
+    fontWeight: '600',
+    color: palette.gray500,
+  },
+  editBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -914,18 +964,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xs,
-  },
-  routeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  route: { fontSize: 17, fontWeight: '700', color: palette.gray900, letterSpacing: 0.3 },
 
   compareBar: { overflow: 'hidden', backgroundColor: palette.gray900, zIndex: 20 },
   compareInner: {
@@ -951,20 +989,20 @@ const s = StyleSheet.create({
     borderRadius: radii.sm,
   },
 
-  chromeWrap: { overflow: 'hidden', backgroundColor: palette.gray50, zIndex: 10 },
   monthRow: {
     height: MONTH_H,
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: HPAD,
+    justifyContent: 'center',
+    backgroundColor: palette.gray50,
   },
   monthLabel: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
-    color: palette.gray600,
-    letterSpacing: 0.4,
+    color: palette.gray400,
+    letterSpacing: 1.2,
   },
+
+  chromeWrap: { overflow: 'hidden', backgroundColor: palette.gray50, zIndex: 10 },
   dateScroll: { height: DATE_H },
   dateStrip: {
     paddingHorizontal: HPAD,
