@@ -17,11 +17,9 @@ import { Text, Row } from '../components/ui';
 import { AirportAlphabetList } from '../components/AirportAlphabetList';
 import { AirportSearchSheet } from '../components/AirportSearchSheet';
 import { KeyboardBottomPad } from '../components/KeyboardBottomPad';
-import { WeatherBadge } from '../components/WeatherIcon';
 import { SCRUBBER_SLOT_W } from '../components/AlphabetScrubber';
 import { palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports, airports } from '../data/airports';
-import { weatherFor } from '../data/weather';
 import {
   getPreferences,
   updatePreferences,
@@ -171,18 +169,16 @@ export default function AirportSearch() {
 
           <View style={styles.headerActions}>
             <Pressable
-              style={styles.multiCityBtn}
               onPress={() => {
                 Keyboard.dismiss();
                 router.push('/multi-city');
               }}
-              hitSlop={4}
-              accessibilityRole="button"
+              hitSlop={8}
+              accessibilityRole="link"
               accessibilityLabel="Add multi-city itinerary"
             >
-              <Feather name="plus" size={14} color={palette.primary600} />
-              <Text variant="bodySmall" style={styles.multiCityLabel}>
-                Multi-city
+              <Text variant="bodySmall" style={styles.multiCityLink}>
+                + Multi-city
               </Text>
             </Pressable>
             <Pressable
@@ -232,9 +228,7 @@ export default function AirportSearch() {
                   >
                     Did you mean
                   </Text>
-                  {searchResults.map((airport) => {
-                    const wx = weatherFor(`${airport.city}-${airport.iata}`);
-                    return (
+                  {searchResults.map((airport) => (
                     <Pressable
                       key={`${airport.iata}-${airport.city}`}
                       style={({ pressed }) => [
@@ -243,16 +237,12 @@ export default function AirportSearch() {
                       ]}
                       onPress={() => handleSelect(airport)}
                     >
-                      <View style={styles.resultMain}>
-                        <HighlightedText
-                          text={`${airport.city} (${airport.iata})`}
-                          highlight={query}
-                        />
-                        <WeatherBadge weather={wx} size={22} />
-                      </View>
+                      <HighlightedText
+                        text={`${airport.city} (${airport.iata})`}
+                        highlight={query}
+                      />
                     </Pressable>
-                    );
-                  })}
+                  ))}
                 </>
               ) : (
                 <View style={styles.noResults}>
@@ -346,21 +336,10 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
   },
-  multiCityBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.full,
-    backgroundColor: palette.primary50,
-    borderWidth: 1,
-    borderColor: palette.primary100,
-  },
-  multiCityLabel: {
-    color: palette.primary700,
+  multiCityLink: {
+    color: palette.primary600,
     fontWeight: '600',
   },
   closeBtn: {
@@ -413,11 +392,6 @@ const styles = StyleSheet.create({
   },
   resultRowPressed: {
     backgroundColor: palette.gray50,
-  },
-  resultMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
   },
   noResults: {
     gap: spacing.xs,

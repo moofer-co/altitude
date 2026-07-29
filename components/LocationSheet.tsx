@@ -19,8 +19,6 @@ import {
   recentOrigins,
   type NearbyAirport,
 } from '../data/destinations';
-import { WeatherBadge } from './WeatherIcon';
-import { weatherFor } from '../data/weather';
 
 const { height: SH } = Dimensions.get('window');
 const HPAD = spacing.lg;
@@ -284,13 +282,7 @@ function AirportRow({
       </View>
 
       <View style={{ flex: 1 }}>
-        <View style={s.cityRow}>
-          <Text variant="bodyMedium">{airport.city}</Text>
-          <WeatherBadge
-            weather={weatherFor(`${airport.city}-${airport.iata}`)}
-            size={18}
-          />
-        </View>
+        <Text variant="bodyMedium">{airport.city}</Text>
         <Text variant="caption" color="textTertiary" numberOfLines={1}>
           {airport.name}
         </Text>
@@ -419,11 +411,6 @@ const s = StyleSheet.create({
   },
   rowOn: { borderColor: palette.primary500, backgroundColor: palette.primary50 },
   rowPressed: { backgroundColor: palette.gray50 },
-  cityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
   code: {
     width: 46,
     height: 34,

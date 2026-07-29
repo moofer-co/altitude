@@ -178,16 +178,20 @@ export default function Home() {
                 RM
               </Text>
             </View>
-            <Text variant="bodySmall">Hello, Ramesh</Text>
+            <Text variant="bodySmall" numberOfLines={1} style={{ flexShrink: 1 }}>
+              Hello, Ramesh
+            </Text>
           </Pressable>
 
-          <WeatherPill
-            weather={homeWeather(origin.city, origin.iata)}
-            onPress={() => {
-              const wx = homeWeather(origin.city, origin.iata);
-              showNotice(`${origin.city}: ${wx.tempC}° · ${wx.label}`);
-            }}
-          />
+          <View style={s.weatherSlot}>
+            <WeatherPill
+              weather={homeWeather(origin.city, origin.iata)}
+              onPress={() => {
+                const wx = homeWeather(origin.city, origin.iata);
+                showNotice(`${origin.city}: ${wx.tempC}° · ${wx.label}`);
+              }}
+            />
+          </View>
 
           <View style={s.greetingRight}>
             {/* Origin chip appears once the main pill scrolls away */}
@@ -471,7 +475,7 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: HPAD,
     paddingVertical: spacing.sm,
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   profile: {
     flexDirection: 'row',
@@ -484,6 +488,7 @@ const s = StyleSheet.create({
     paddingVertical: spacing.xs,
     minHeight: 48,
     flexShrink: 1,
+    maxWidth: '46%',
   },
   avatar: {
     width: 38,
@@ -493,7 +498,12 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  greetingRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  weatherSlot: {
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  greetingRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 0 },
   originChip: {
     flexDirection: 'row',
     alignItems: 'center',

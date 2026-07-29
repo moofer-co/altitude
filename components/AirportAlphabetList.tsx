@@ -10,10 +10,8 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { Text } from './ui';
 import { AlphabetScrubber, SCRUBBER_SLOT_W } from './AlphabetScrubber';
-import { WeatherBadge } from './WeatherIcon';
 import { palette, spacing, radii } from '../constants/tokens';
 import { groupAirportsByLetter } from '../lib/airportSearch';
-import { weatherFor } from '../data/weather';
 import type { Airport } from '../types';
 
 const AIRPORT_ROW = 56;
@@ -114,7 +112,6 @@ export function AirportAlphabetList({
       }
 
       const selected = selectedIata === item.airport.iata;
-      const wx = weatherFor(`${item.airport.city}-${item.airport.iata}`);
       return (
         <Pressable
           style={({ pressed }) => [
@@ -124,12 +121,9 @@ export function AirportAlphabetList({
           ]}
           onPress={() => onSelectAirport(item.airport)}
         >
-          <View style={styles.airportMain}>
-            <Text style={styles.airportCity}>
-              {item.airport.city} ({item.airport.iata})
-            </Text>
-            <WeatherBadge weather={wx} size={22} />
-          </View>
+          <Text style={styles.airportCity}>
+            {item.airport.city} ({item.airport.iata})
+          </Text>
           {selected && (
             <Feather name="check" size={18} color={palette.primary600} />
           )}
@@ -210,7 +204,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.xs,
     borderRadius: radii.sm,
-    gap: spacing.sm,
   },
   airportRowPressed: {
     backgroundColor: palette.gray50,
@@ -218,15 +211,8 @@ const styles = StyleSheet.create({
   rowSelected: {
     backgroundColor: palette.primary50,
   },
-  airportMain: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    minWidth: 0,
-  },
   airportCity: {
-    flexShrink: 1,
+    flex: 1,
     fontSize: 20,
     lineHeight: 28,
     fontWeight: '400',

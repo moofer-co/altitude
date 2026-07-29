@@ -11,7 +11,10 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, Button, Row } from '../components/ui';
 import { AirportSearchSheet } from '../components/AirportSearchSheet';
-import { DatePickSheet, formatShortDate } from '../components/DatePickSheet';
+import {
+  DateSelectSheet,
+} from '../components/DateSelectSheet';
+import { formatShortDate } from '../components/DateSelectPicker';
 import { palette, spacing, radii, shadows } from '../constants/tokens';
 import { airports, allAirports } from '../data/airports';
 import { getPreferences } from '../data/account';
@@ -286,18 +289,22 @@ export default function MultiCity() {
         onClose={() => setAirportTarget(null)}
         onSelect={(airport) => {
           if (!airportTarget) return;
-          updateLeg(airportTarget.legId, {
-            [airportTarget.field]: airport,
-          });
+          const { legId, field } = airportTarget;
+          updateLeg(legId, { [field]: airport });
           setAirportTarget(null);
+          // After picking a city (TO), ask for the date with the full picker sheet
+          if (field === 'to') {
+            setTimeout(() => setDateTarget(legId), 280);
+          }
         }}
       />
 
-      <DatePickSheet
+      <DateSelectSheet
         visible={dateTarget != null}
         title="Select date"
         selected={activeDate}
         minDate={dateTarget ? minDateFor(dateTarget) : null}
+        confirmLabel="Continue"
         onClose={() => setDateTarget(null)}
         onSelect={(iso) => {
           if (!dateTarget) return;
