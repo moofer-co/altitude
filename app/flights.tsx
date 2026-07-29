@@ -11,6 +11,7 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
 import { palette, spacing, radii, shadows } from '../constants/tokens';
@@ -42,10 +43,16 @@ import {
 const { width: SW } = Dimensions.get('window');
 const HPAD = spacing.lg;
 
-const HEADER_H = 62;
-const DATE_H = 78;
+/** Fewer chips on screen; the rest scroll week by week. */
+const DATES_VISIBLE = 5;
+const DATE_CHIP_W = (SW - HPAD * 2) / DATES_VISIBLE;
+const DATE_CHIP_GAP = 0;
+
+const HEADER_H = 64;
+const MONTH_H = 28;
+const DATE_H = 82;
 const FILTER_H = 60;
-const CHROME_H = DATE_H + FILTER_H;
+const CHROME_H = MONTH_H + DATE_H + FILTER_H;
 
 const MAX_COMPARE = 3;
 const HESITATION_THRESHOLD = 4;
@@ -62,9 +69,19 @@ const PICK_META: Record<
   fastest: { label: 'Fastest', color: palette.infoDark, bg: palette.infoLight, icon: 'trending-up' },
 };
 
+function formatHeaderDate(d: (typeof dateStrip)[number]) {
+  const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const wd = weekdays[new Date(`${d.full}T12:00:00`).getDay()];
+  return `${wd}, ${d.date} ${d.month}`;
+}
+
 export default function Flights() {
+  const router = useRouter();
   const [pax, setPax] = useState<PaxMix>(defaultPax);
   const [dateIndex, setDateIndex] = useState(0);
+  const [visibleMonth, setVisibleMonth] = useState(
+    `${dateStrip[0].monthFull} ${dateStrip[0].year}`,
+  );
   const [sortMode, setSortMode] = useState<SortMode>('price');
   const [filters, setFilters] = useState<FlightFilters>(emptyFlightFilters);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -88,6 +105,57 @@ export default function Flights() {
   const [priority, setPriority] = useState<Priority | null>(null);
   const signals = useRef(0);
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dateScrollRef = useRef<ScrollView>(null);
+  const monthFade = useRef(new Animated.Value(1)).current;
+
+  const selectedDate = dateStrip[dateIndex] ?? dateStrip[0];
+  const lowestPrice = useMemo(
+    () => Math.min(...dateStrip.map((d) => d.price)),
+    [],
+  );
+
+  const setMonthLabel = useCallback(
+    (label: string) => {
+      setVisibleMonth((prev) => {
+        if (prev === label) return prev;
+        monthFade.setValue(0.35);
+        Animated.timing(monthFade, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }).start();
+        return label;
+      });
+    },
+    [monthFade],
+  );
+
+  const onDateScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const x = e.nativeEvent.contentOffset.x;
+      const idx = Math.max(
+        0,
+        Math.min(dateStrip.length - 1, Math.round(x / DATE_CHIP_W)),
+      );
+      const d = dateStrip[idx];
+      setMonthLabel(`${d.monthFull} ${d.year}`);
+    },
+    [setMonthLabel],
+  );
+
+  const selectDate = useCallback(
+    (i: number) => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setDateIndex(i);
+      const d = dateStrip[i];
+      setMonthLabel(`${d.monthFull} ${d.year}`);
+      dateScrollRef.current?.scrollTo({
+        x: Math.max(0, (i - Math.floor(DATES_VISIBLE / 2)) * DATE_CHIP_W),
+        animated: true,
+      });
+    },
+    [setMonthLabel],
+  );
 
   // ── Chrome animation ──
   const collapse = useRef(new Animated.Value(0)).current;
@@ -324,27 +392,29 @@ export default function Flights() {
         style={[s.headerWrap, { height: headerHeight, opacity: headerOpacity }]}
       >
         <View style={s.header}>
-          <View style={s.headerPill}>
-            <Pressable style={s.back} onPress={() => {}} hitSlop={6}>
-              <Feather name="chevron-left" size={20} color={palette.gray900} />
-            </Pressable>
-            <View>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={s.route}>DEL</Text>
-                <Text style={{ color: palette.gray400 }}>{'  ⇄  '}</Text>
-                <Text style={s.route}>BLR</Text>
-              </View>
-              <Text variant="caption" color="textSecondary">
-                Sat, 15 Aug · {shortPax(pax)}
-              </Text>
+          <Pressable
+            style={s.iconBtn}
+            onPress={() => {
+              if (router.canGoBack()) router.back();
+            }}
+            hitSlop={6}
+          >
+            <Feather name="chevron-left" size={20} color={palette.gray900} />
+          </Pressable>
+
+          <View style={s.headerCenter}>
+            <View style={s.routeRow}>
+              <Text style={s.route}>DEL</Text>
+              <Feather name="arrow-right" size={14} color={palette.gray400} />
+              <Text style={s.route}>BLR</Text>
             </View>
+            <Text variant="caption" color="textSecondary" numberOfLines={1}>
+              {formatHeaderDate(selectedDate)} · {shortPax(pax)}
+            </Text>
           </View>
 
-          <Pressable style={s.modify} onPress={() => setPaxOpen(true)}>
-            <Text variant="caption" style={{ color: palette.primary600, fontWeight: '700', letterSpacing: 0.8 }}>
-              MODIFY
-            </Text>
-            <Feather name="edit-2" size={14} color={palette.primary600} />
+          <Pressable style={s.iconBtn} onPress={() => setPaxOpen(true)} hitSlop={6}>
+            <Feather name="edit-2" size={16} color={palette.gray900} />
           </Pressable>
         </View>
       </Animated.View>
@@ -374,26 +444,45 @@ export default function Flights() {
         </View>
       </Animated.View>
 
-      {/* ── Dates + filters ── */}
+      {/* ── Month + dates + filters ── */}
       <Animated.View style={[s.chromeWrap, { height: chromeHeight }]}>
         <Animated.View style={{ transform: [{ translateY: chromeShift }] }}>
-          {/* Dates */}
-          <View style={s.dateStrip}>
+          <Animated.View style={[s.monthRow, { opacity: monthFade }]}>
+            <Text style={s.monthLabel}>{visibleMonth}</Text>
+            <Text variant="caption" color="textTertiary">
+              Scroll for more dates
+            </Text>
+          </Animated.View>
+
+          <ScrollView
+            ref={dateScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            decelerationRate="fast"
+            snapToInterval={DATE_CHIP_W + DATE_CHIP_GAP}
+            snapToAlignment="start"
+            disableIntervalMomentum
+            onScroll={onDateScroll}
+            scrollEventThrottle={16}
+            contentContainerStyle={s.dateStrip}
+            style={s.dateScroll}
+          >
             {dateStrip.map((d, i) => {
               const on = i === dateIndex;
+              const lowest = d.price === lowestPrice;
               return (
                 <Pressable
                   key={d.full}
-                  style={[s.dateChip, { width: (SW - HPAD * 2) / 7 }, on && s.dateChipOn]}
-                  onPress={() => {
-                    animate();
-                    setDateIndex(i);
-                  }}
+                  style={[s.dateChip, { width: DATE_CHIP_W }, on && s.dateChipOn]}
+                  onPress={() => selectDate(i)}
                 >
                   <Text
                     variant="caption"
                     align="center"
-                    style={{ color: on ? palette.white : palette.gray500, fontWeight: '500' }}
+                    style={{
+                      color: on ? 'rgba(255,255,255,0.85)' : palette.gray500,
+                      fontWeight: '500',
+                    }}
                   >
                     {d.day}
                   </Text>
@@ -406,14 +495,21 @@ export default function Flights() {
                   <Text
                     variant="caption"
                     align="center"
-                    style={{ color: on ? 'rgba(255,255,255,0.85)' : palette.warning }}
+                    style={{
+                      color: on
+                        ? 'rgba(255,255,255,0.9)'
+                        : lowest
+                          ? palette.success
+                          : palette.warning,
+                      fontWeight: lowest || on ? '600' : '400',
+                    }}
                   >
                     ₹{(d.price / 1000).toFixed(1)}k
                   </Text>
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
 
           {/* Filters */}
           <View style={s.filterRow}>
@@ -805,35 +901,31 @@ const s = StyleSheet.create({
     height: HEADER_H,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: spacing.sm,
     paddingHorizontal: HPAD,
   },
-  headerPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: palette.white,
-    borderRadius: radii.full,
-    paddingRight: spacing.lg,
-    paddingLeft: 5,
-    paddingVertical: 5,
-  },
-  back: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: palette.gray100,
+    borderWidth: 1,
+    borderColor: palette.gray200,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  route: { fontSize: 18, fontWeight: '700', color: palette.gray900 },
-  modify: {
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xs,
+  },
+  routeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: spacing.sm,
-    minHeight: 48,
+    gap: 6,
   },
+  route: { fontSize: 17, fontWeight: '700', color: palette.gray900, letterSpacing: 0.3 },
 
   compareBar: { overflow: 'hidden', backgroundColor: palette.gray900, zIndex: 20 },
   compareInner: {
@@ -860,10 +952,22 @@ const s = StyleSheet.create({
   },
 
   chromeWrap: { overflow: 'hidden', backgroundColor: palette.gray50, zIndex: 10 },
-  dateStrip: {
+  monthRow: {
+    height: MONTH_H,
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: HPAD,
-    height: DATE_H,
+  },
+  monthLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: palette.gray600,
+    letterSpacing: 0.4,
+  },
+  dateScroll: { height: DATE_H },
+  dateStrip: {
+    paddingHorizontal: HPAD,
     alignItems: 'center',
   },
   dateChip: {
