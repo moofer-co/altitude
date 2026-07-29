@@ -35,18 +35,17 @@ type ElementSpec = {
 };
 
 /** Hide / appear pacing. */
-const APPEAR_MS = 2800;
-const HIDE_MS = 2400;
-const MIN_VISIBLE_MS = 18000;
-const GAP_AFTER_APPEAR_MS = 4500;
-const INITIAL_STAGGER_MS = 2800;
-const BEAT_AFTER_HIDE_MS = 1800;
-/** Pause between introducing elements 6 → 9 while others keep spinning. */
-const RAMP_GAP_MS = 5200;
+const APPEAR_MS = 2200;
+const HIDE_MS = 2000;
+const MIN_VISIBLE_MS = 16000;
+const GAP_AFTER_APPEAR_MS = 4200;
+const BEAT_AFTER_HIDE_MS = 1600;
+/** Pause between introducing elements 6 and 7 while others keep spinning. */
+const RAMP_GAP_MS = 4800;
 
-/** Start with five; ramp up to nine. */
+/** Start with five together; ramp up to seven. */
 const OPEN_COUNT = 5;
-const MAX_VISIBLE = 9;
+const MAX_VISIBLE = 7;
 
 /** Orbital pace. */
 const OUTER_SPIN_MS = 52000;
@@ -66,21 +65,15 @@ const ELEMENTS: ElementSpec[] = [
   { id: 'bag', kind: 'bag', size: 38, color: '#0D9488', iconColor: palette.white },
   { id: 'compass', kind: 'compass', size: 36, color: '#A78BFA', iconColor: palette.white },
   { id: 'ticket', kind: 'ticket', size: 34, color: '#F472B6', iconColor: palette.white },
-  { id: 'sun', kind: 'sun', size: 32, color: '#FBBF24', iconColor: '#78350F' },
-  { id: 'anchor', kind: 'anchor', size: 36, color: '#0891B2', iconColor: palette.white },
 ];
 
-/** Spaced seed poses for the opening five, then ramp introduces. */
+/** Spaced seed poses for the opening five (then ramp uses free angles). */
 const SEED_POSES: { orbit: OrbitId; angle: number }[] = [
   { orbit: 'outer', angle: -30 },
   { orbit: 'outer', angle: 55 },
   { orbit: 'outer', angle: 160 },
   { orbit: 'inner', angle: 100 },
   { orbit: 'inner', angle: 250 },
-  { orbit: 'outer', angle: 250 },
-  { orbit: 'inner', angle: 20 },
-  { orbit: 'inner', angle: 175 },
-  { orbit: 'outer', angle: 300 },
 ];
 
 function TravelIcon({
@@ -104,12 +97,12 @@ function TravelIcon({
       return <Feather name="book" size={s} color={color} />;
     case 'globe':
       return <Feather name="globe" size={s} color={color} />;
-    case 'ticket':
-      return <Feather name="tag" size={s} color={color} />;
-    case 'compass':
-      return <Feather name="compass" size={s} color={color} />;
     case 'sun':
       return <Feather name="sun" size={s} color={color} />;
+    case 'compass':
+      return <Feather name="compass" size={s} color={color} />;
+    case 'ticket':
+      return <Feather name="tag" size={s} color={color} />;
     case 'anchor':
       return <Feather name="navigation" size={s} color={color} />;
   }
@@ -356,6 +349,9 @@ function OrbitElement({
         angleRef.current = nextAngle;
         setOrbit(nextOrbit);
         setAngle(nextAngle);
+        // Count as visible immediately so openers land together as a set of 5
+        visibleRef.current = true;
+        sinceRef.current = Date.now();
         opacity.setValue(0);
         scale.setValue(0.88);
         requestAnimationFrame(() => {
@@ -373,8 +369,6 @@ function OrbitElement({
               useNativeDriver: true,
             }),
           ]).start(() => {
-            visibleRef.current = true;
-            sinceRef.current = Date.now();
             busyRef.current = false;
             resolve();
           });
@@ -576,21 +570,22 @@ export function OnboardingOrbit({
       await waitForHandles();
       if (signal.cancelled) return;
 
-      // Open with 5 randomly chosen elements on spaced seed poses
+      // Open with 5 at once on spaced seed poses (not one-by-one)
       const shuffled = shuffle(ELEMENTS);
       const opener = shuffled.slice(0, OPEN_COUNT);
-      const waiting = shuffled.slice(OPEN_COUNT);
-      for (let i = 0; i < opener.length; i++) {
-        if (signal.cancelled) return;
-        const spec = opener[i];
-        const h = handles.current.get(spec.id);
-        if (!h) continue;
-        const pose = SEED_POSES[i];
-        await h.showAt(pose.orbit, pose.angle);
-        await sleep(INITIAL_STAGGER_MS, signal);
-      }
+      const waiting = shuffled.slice(OPEN_COUNT, MAX_VISIBLE);
 
-      // Ramp 6 → 9: introduce waiting elements while others keep spinning
+      await Promise.all(
+        opener.map((spec, i) => {
+          const h = handles.current.get(spec.id);
+          if (!h) return Promise.resolve();
+          const pose = SEED_POSES[i] ?? SEED_POSES[i % SEED_POSES.length];
+          return h.showAt(pose.orbit, pose.angle);
+        }),
+      );
+      if (signal.cancelled) return;
+
+      // Ramp 6 → 7: introduce waiting elements while others keep spinning
       for (let i = 0; i < waiting.length && !signal.cancelled; i++) {
         await sleep(RAMP_GAP_MS, signal);
         if (signal.cancelled) break;
@@ -601,7 +596,7 @@ export function OnboardingOrbit({
         await h.showAt(orbit, angle);
       }
 
-      // Steady cycle: hide one → beat → reappear elsewhere (count stays ~9)
+      // Steady cycle: hide one → beat → reappear elsewhere (count stays ≤ 7)
       while (!signal.cancelled) {
         await sleep(GAP_AFTER_APPEAR_MS, signal);
         if (signal.cancelled) break;
@@ -611,6 +606,21 @@ export function OnboardingOrbit({
           .sort((a, b) => a.visibleSince() - b.visibleSince());
         if (visible.length === 0) {
           await sleep(800, signal);
+          continue;
+        }
+
+        // Still ramping? Prefer introducing before cycling hides
+        const hiddenWaiting = [...handles.current.values()].filter(
+          (h) => !h.isVisible(),
+        );
+        if (
+          visible.length < MAX_VISIBLE &&
+          hiddenWaiting.length > 0
+        ) {
+          const next =
+            hiddenWaiting[Math.floor(Math.random() * hiddenWaiting.length)];
+          const { orbit, angle } = placeFor(next.id, undefined, undefined);
+          await next.showAt(orbit, angle);
           continue;
         }
 
