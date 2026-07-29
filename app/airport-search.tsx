@@ -10,12 +10,13 @@ import {
   Easing,
   ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, Row } from '../components/ui';
 import { AirportAlphabetList } from '../components/AirportAlphabetList';
 import { AirportSearchSheet } from '../components/AirportSearchSheet';
+import { SCRUBBER_SLOT_W } from '../components/AlphabetScrubber';
 import { palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports, airports } from '../data/airports';
 import {
@@ -55,6 +56,7 @@ export default function AirportSearch() {
   const { morph } = useLocalSearchParams<{ morph?: string }>();
   const fromMorph = morph === '1';
   const keyboardLift = useKeyboardLift();
+  const insets = useSafeAreaInsets();
 
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Airport | null>(null);
@@ -142,10 +144,7 @@ export default function AirportSearch() {
     : prefs.homeAirport;
 
   return (
-    <SafeAreaView
-      style={[styles.safe, keyboardLift > 0 && { marginBottom: keyboardLift }]}
-      edges={['top', 'bottom']}
-    >
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <Animated.View style={{ opacity: headerEnter }}>
         <Row justify="space-between" style={styles.header}>
           <Pressable
@@ -239,7 +238,15 @@ export default function AirportSearch() {
       </Animated.View>
 
       <Animated.View style={{ opacity: searchEnter }}>
-        <View style={styles.searchBar}>
+        <View
+          style={[
+            styles.searchBar,
+            {
+              paddingBottom:
+                spacing.sm + (keyboardLift > 0 ? keyboardLift : insets.bottom),
+            },
+          ]}
+        >
           <Feather
             name="search"
             size={18}
@@ -335,7 +342,7 @@ const styles = StyleSheet.create({
 
   searchOverlay: {
     ...StyleSheet.absoluteFill,
-    right: 36,
+    right: SCRUBBER_SLOT_W,
     backgroundColor: palette.white,
     zIndex: 10,
   },

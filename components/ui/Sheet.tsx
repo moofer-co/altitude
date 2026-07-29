@@ -7,6 +7,8 @@ import {
   Modal,
   Animated,
   PanResponder,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -20,11 +22,9 @@ const HPAD = spacing.lg;
 /**
  * Bottom sheet with drag-to-dismiss.
  *
- * The drag handler lives on the header only — putting it on the whole sheet
- * fights any scrollable content inside.
- *
- * When the keyboard is open the sheet lifts (and shrinks) so footers / CTAs
- * stay visible — e.g. Booking → Add passenger → Save passenger.
+ * Keyboard: overlay gets paddingBottom = keyboard height so the whole sheet
+ * (including footer CTA) sits above the keyboard. Avoids mixing native-driver
+ * transforms with marginBottom on the same Animated.View.
  */
 export function Sheet({
   visible,
@@ -50,7 +50,6 @@ export function Sheet({
   const height = SH * heightRatio;
   const translateY = useRef(new Animated.Value(height)).current;
 
-  // Keep the sheet above the keyboard without overflowing the top of the screen
   const sheetHeight = Math.min(
     height + insets.bottom,
     Math.max(280, SH - keyboardLift),
@@ -68,6 +67,13 @@ export function Sheet({
       translateY.setValue(height);
     }
   }, [visible, translateY, height]);
+
+  // Reset keyboard pad when sheet closes
+  useEffect(() => {
+    if (!visible) {
+      // no-op — lift clears via keyboard hide; blur inputs on close
+    }
+  }, [visible]);
 
   const dismiss = useCallback(() => {
     Animated.timing(translateY, {
@@ -106,60 +112,74 @@ export function Sheet({
       animationType="fade"
       onRequestClose={dismiss}
     >
-      <View style={s.overlay}>
-        <Pressable style={s.backdrop} onPress={dismiss} />
-
-        <Animated.View
+      <KeyboardAvoidingView
+        style={s.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
+      >
+        <View
           style={[
-            s.sheet,
-            {
-              height: sheetHeight,
-              marginBottom: keyboardLift,
-              transform: [{ translateY }],
-            },
+            s.overlayInner,
+            // Android: pad the overlay so the sheet clears the keyboard
+            Platform.OS === 'android' && keyboardLift > 0
+              ? { paddingBottom: keyboardLift }
+              : null,
           ]}
         >
-          <View {...pan.panHandlers} style={s.head}>
-            <View style={s.handle} />
-            <View style={s.headRow}>
-              <View style={{ flex: 1 }}>
-                <Text variant="h2">{title}</Text>
-                {subtitle && (
-                  <Text variant="caption" color="textTertiary" style={{ marginTop: 2 }}>
-                    {subtitle}
-                  </Text>
-                )}
+          <Pressable style={s.backdrop} onPress={dismiss} />
+
+          <Animated.View
+            style={[
+              s.sheet,
+              {
+                height: sheetHeight,
+                transform: [{ translateY }],
+              },
+            ]}
+          >
+            <View {...pan.panHandlers} style={s.head}>
+              <View style={s.handle} />
+              <View style={s.headRow}>
+                <View style={{ flex: 1 }}>
+                  <Text variant="h2">{title}</Text>
+                  {subtitle && (
+                    <Text variant="caption" color="textTertiary" style={{ marginTop: 2 }}>
+                      {subtitle}
+                    </Text>
+                  )}
+                </View>
+                <Pressable style={s.close} onPress={dismiss} hitSlop={8}>
+                  <Feather name="x" size={19} color={palette.gray600} />
+                </Pressable>
               </View>
-              <Pressable style={s.close} onPress={dismiss} hitSlop={8}>
-                <Feather name="x" size={19} color={palette.gray600} />
-              </Pressable>
+              {headerAccessory}
             </View>
-            {headerAccessory}
-          </View>
 
-          <View style={{ flex: 1 }}>{children}</View>
+            <View style={{ flex: 1 }}>{children}</View>
 
-          {footer && (
-            <View
-              style={[
-                s.footer,
-                {
-                  paddingBottom:
-                    keyboardLift > 0 ? spacing.md : insets.bottom + spacing.md,
-                },
-              ]}
-            >
-              {footer}
-            </View>
-          )}
-        </Animated.View>
-      </View>
+            {footer && (
+              <View
+                style={[
+                  s.footer,
+                  {
+                    paddingBottom:
+                      keyboardLift > 0 ? spacing.md : insets.bottom + spacing.md,
+                  },
+                ]}
+              >
+                {footer}
+              </View>
+            )}
+          </Animated.View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const s = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
+  overlay: { flex: 1 },
+  overlayInner: { flex: 1, justifyContent: 'flex-end' },
   backdrop: {
     position: 'absolute',
     top: 0,

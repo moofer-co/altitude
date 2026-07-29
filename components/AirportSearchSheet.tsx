@@ -11,10 +11,10 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
 import { AirportAlphabetList } from './AirportAlphabetList';
+import { SCRUBBER_SLOT_W } from './AlphabetScrubber';
 import { palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports } from '../data/airports';
 import { searchAirports } from '../lib/airportSearch';
-import { useKeyboardLift } from '../hooks/useKeyboardLift';
 import type { Airport } from '../types';
 
 function HighlightedText({ text, highlight }: { text: string; highlight: string }) {
@@ -55,7 +55,6 @@ export function AirportSearchSheet({
 }) {
   const [query, setQuery] = useState('');
   const inputRef = useRef<TextInput>(null);
-  const keyboardLift = useKeyboardLift();
 
   useEffect(() => {
     if (!visible) return;
@@ -153,38 +152,40 @@ export function AirportSearchSheet({
         )}
       </View>
 
-      <View style={[styles.searchBar, { marginBottom: spacing.md + keyboardLift }]}>
-        <Feather
-          name="search"
-          size={18}
-          color={palette.gray400}
-          style={styles.searchIcon}
-        />
-        <TextInput
-          ref={inputRef}
-          style={styles.searchInput}
-          placeholder="Where from?"
-          placeholderTextColor={palette.gray400}
-          value={query}
-          onChangeText={(text) => {
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            setQuery(text);
-          }}
-          selectionColor={palette.primary500}
-          returnKeyType="search"
-          autoCorrect={false}
-        />
-        {query.length > 0 && (
-          <Pressable
-            onPress={() => {
-              setQuery('');
-              inputRef.current?.focus();
+      <View style={[styles.searchBarWrap, { paddingBottom: spacing.md }]}>
+        <View style={styles.searchBar}>
+          <Feather
+            name="search"
+            size={18}
+            color={palette.gray400}
+            style={styles.searchIcon}
+          />
+          <TextInput
+            ref={inputRef}
+            style={styles.searchInput}
+            placeholder="Where from?"
+            placeholderTextColor={palette.gray400}
+            value={query}
+            onChangeText={(text) => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setQuery(text);
             }}
-            hitSlop={8}
-          >
-            <Feather name="x-circle" size={18} color={palette.gray400} />
-          </Pressable>
-        )}
+            selectionColor={palette.primary500}
+            returnKeyType="search"
+            autoCorrect={false}
+          />
+          {query.length > 0 && (
+            <Pressable
+              onPress={() => {
+                setQuery('');
+                inputRef.current?.focus();
+              }}
+              hitSlop={8}
+            >
+              <Feather name="x-circle" size={18} color={palette.gray400} />
+            </Pressable>
+          )}
+        </View>
       </View>
     </Sheet>
   );
@@ -195,7 +196,7 @@ const styles = StyleSheet.create({
 
   searchOverlay: {
     ...StyleSheet.absoluteFill,
-    right: 36,
+    right: SCRUBBER_SLOT_W,
     backgroundColor: palette.white,
     zIndex: 10,
   },
@@ -235,11 +236,14 @@ const styles = StyleSheet.create({
     color: palette.gray900,
   },
 
+  searchBarWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    backgroundColor: palette.white,
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.sm,
     backgroundColor: palette.gray50,
     borderRadius: radii.full,
     borderWidth: 1,

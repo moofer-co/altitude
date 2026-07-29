@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text } from './ui';
-import { AlphabetScrubber } from './AlphabetScrubber';
+import { AlphabetScrubber, SCRUBBER_SLOT_W } from './AlphabetScrubber';
 import { palette, spacing, radii } from '../constants/tokens';
 import { groupAirportsByLetter } from '../lib/airportSearch';
 import type { Airport } from '../types';
@@ -39,8 +39,15 @@ function buildRows(airports: Airport[]) {
   let offset = 0;
 
   for (const section of sections) {
-    // Jump to the first airport in this letter group
+    // Letter header ABOVE its airports (not a footer — that mismatched labels)
     letterOffset.set(section.title, offset);
+    rows.push({
+      key: `l-${section.title}`,
+      kind: 'letter',
+      letter: section.title,
+    });
+    offset += LETTER_ROW;
+
     for (const airport of section.data) {
       rows.push({
         key: `a-${airport.iata}-${airport.city}`,
@@ -50,12 +57,6 @@ function buildRows(airports: Airport[]) {
       });
       offset += AIRPORT_ROW;
     }
-    rows.push({
-      key: `l-${section.title}`,
-      kind: 'letter',
-      letter: section.title,
-    });
-    offset += LETTER_ROW;
   }
 
   return {
@@ -67,9 +68,7 @@ function buildRows(airports: Airport[]) {
 
 /**
  * Z→A airport list with a working alphabet scrubber.
- *
- * Uses FlatList + fixed row heights + scrollToOffset (SectionList
- * scrollToLocation is too unreliable for letter jumps).
+ * FlatList + fixed row heights + scrollToOffset.
  */
 export function AirportAlphabetList({
   airports,
@@ -134,15 +133,18 @@ export function AirportAlphabetList({
     [onSelectAirport, selectedIata],
   );
 
-  const getItemLayout = useCallback((_: ArrayLike<Row> | null | undefined, index: number) => {
-    const item = rows[index];
-    const length = item?.kind === 'letter' ? LETTER_ROW : AIRPORT_ROW;
-    let offset = 0;
-    for (let i = 0; i < index; i++) {
-      offset += rows[i]?.kind === 'letter' ? LETTER_ROW : AIRPORT_ROW;
-    }
-    return { length, offset, index };
-  }, [rows]);
+  const getItemLayout = useCallback(
+    (_: ArrayLike<Row> | null | undefined, index: number) => {
+      const item = rows[index];
+      const length = item?.kind === 'letter' ? LETTER_ROW : AIRPORT_ROW;
+      let offset = 0;
+      for (let i = 0; i < index; i++) {
+        offset += rows[i]?.kind === 'letter' ? LETTER_ROW : AIRPORT_ROW;
+      }
+      return { length, offset, index };
+    },
+    [rows],
+  );
 
   return (
     <View style={styles.root}>
@@ -184,14 +186,14 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
-    paddingRight: 40,
+    paddingRight: SCRUBBER_SLOT_W,
   },
   scrubberLayer: {
     position: 'absolute',
     right: 0,
     top: 0,
     bottom: 0,
-    width: 36,
+    width: SCRUBBER_SLOT_W,
     zIndex: 20,
     elevation: 20,
   },
