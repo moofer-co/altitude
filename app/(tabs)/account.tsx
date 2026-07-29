@@ -3,10 +3,10 @@ import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { Text } from '../components/ui';
-import { BottomNav } from '../components/BottomNav';
-import { PickerSheet } from '../components/PickerSheet';
-import { AirportSearchSheet } from '../components/AirportSearchSheet';
+import { Text } from '../../components/ui';
+import { TabScreenEnter } from '../../components/TabScreenEnter';
+import { PickerSheet } from '../../components/PickerSheet';
+import { AirportSearchSheet } from '../../components/AirportSearchSheet';
 import {
   ProfileSheet,
   TravellerSheet,
@@ -15,11 +15,11 @@ import {
   HelpCentreSheet,
   TermsSheet,
   SignOutSheet,
-} from '../components/AccountSheets';
-import { LoyaltySheet, LoyaltySummary } from '../components/LoyaltySheets';
-import { palette, spacing, radii } from '../constants/tokens';
-import { useNow } from '../data/trip';
-import { airports } from '../data/airports';
+} from '../../components/AccountSheets';
+import { LoyaltySheet, LoyaltySummary } from '../../components/LoyaltySheets';
+import { palette, spacing, radii } from '../../constants/tokens';
+import { useNow } from '../../data/trip';
+import { airports } from '../../data/airports';
 import {
   initialProfile,
   initialTravellers,
@@ -42,14 +42,14 @@ import {
   type PrefKey,
   type NotificationSetting,
   type PaymentMethod,
-} from '../data/account';
+} from '../../data/account';
 import {
   getLinkedLoyalty,
   subscribeLoyalty,
   upsertLinkedLoyalty,
   unlinkLoyalty,
   type LinkedLoyalty,
-} from '../data/loyalty';
+} from '../../data/loyalty';
 
 const HPAD = spacing.lg;
 
@@ -140,11 +140,9 @@ export default function Account() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <TabScreenEnter variant="account" backgroundColor={palette.white}>
       <View style={s.header}>
         <Text variant="h1">Account</Text>
-        <Pressable style={s.iconBtn} onPress={() => router.back()} hitSlop={6}>
-          <Feather name="x" size={20} color={palette.gray900} />
-        </Pressable>
       </View>
 
       <ScrollView
@@ -439,6 +437,7 @@ export default function Account() {
 
         <View style={{ height: spacing.xl }} />
       </ScrollView>
+      </TabScreenEnter>
 
       {/* ── Sheets ── */}
       <ProfileSheet
@@ -571,8 +570,6 @@ export default function Account() {
           }}
         />
       )}
-
-      <BottomNav active="account" />
     </SafeAreaView>
   );
 }

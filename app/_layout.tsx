@@ -21,6 +21,13 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="index" />
+        {/* Tab shell: fade in from auth; bar lives inside and never slides */}
+        <Stack.Screen
+          name="(tabs)"
+          options={{
+            animation: 'fade',
+          }}
+        />
         {/* Instant handoff — home morph owns the transition */}
         <Stack.Screen
           name="airport-search"

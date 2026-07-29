@@ -15,19 +15,19 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { Text } from '../components/ui';
-import { palette, spacing, radii } from '../constants/tokens';
-import { LocationSheet } from '../components/LocationSheet';
-import { DestinationSheet } from '../components/DestinationSheet';
-import { PaxSheet } from '../components/PaxSheet';
-import { GlowingPaxButton } from '../components/GlowingPaxButton';
-import { WeatherPill } from '../components/WeatherIcon';
-import { BottomNav } from '../components/BottomNav';
+import { Text } from '../../components/ui';
+import { palette, spacing, radii } from '../../constants/tokens';
+import { LocationSheet } from '../../components/LocationSheet';
+import { DestinationSheet } from '../../components/DestinationSheet';
+import { PaxSheet } from '../../components/PaxSheet';
+import { GlowingPaxButton } from '../../components/GlowingPaxButton';
+import { WeatherPill } from '../../components/WeatherIcon';
+import { TabScreenEnter } from '../../components/TabScreenEnter';
 import {
   SearchMorphOverlay,
   type SearchBarRect,
-} from '../components/SearchMorphOverlay';
-import { defaultPax, type PaxMix } from '../lib/flightRules';
+} from '../../components/SearchMorphOverlay';
+import { defaultPax, type PaxMix } from '../../lib/flightRules';
 import {
   weekendEscapes,
   dealsNow,
@@ -35,8 +35,8 @@ import {
   formatFlightTime,
   type Destination,
   type NearbyAirport,
-} from '../data/destinations';
-import { homeWeather } from '../data/weather';
+} from '../../data/destinations';
+import { homeWeather } from '../../data/weather';
 
 const { width: SW } = Dimensions.get('window');
 const HPAD = spacing.lg;
@@ -180,10 +180,11 @@ export default function Home() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <TabScreenEnter variant="explore" backgroundColor={palette.white}>
       <Animated.View style={[s.fadeRoot, { opacity: homeFade }]}>
         {/* ── Greeting: name left · weather/location swap + bell right ── */}
         <View style={s.greeting}>
-          <Pressable style={s.profile} onPress={() => router.push('/account')}>
+          <Pressable style={s.profile} onPress={() => router.navigate('/account')}>
             <View style={s.avatar}>
               <Text variant="caption" style={{ color: palette.white, fontWeight: '700' }}>
                 RM
@@ -407,10 +408,8 @@ export default function Home() {
 
         <View style={{ height: spacing.lg }} />
       </ScrollView>
-
-      {/* ── Tabs ── */}
-      <BottomNav active="home" />
       </Animated.View>
+      </TabScreenEnter>
 
       {/* ── Sheets ── */}
       <LocationSheet

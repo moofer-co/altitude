@@ -12,19 +12,19 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { Text, Button } from '../components/ui';
-import { BottomNav } from '../components/BottomNav';
-import { DestinationSheet } from '../components/DestinationSheet';
-import { palette, spacing, radii } from '../constants/tokens';
+import { Text, Button } from '../../components/ui';
+import { TabScreenEnter } from '../../components/TabScreenEnter';
+import { DestinationSheet } from '../../components/DestinationSheet';
+import { palette, spacing, radii } from '../../constants/tokens';
 import {
   favoriteDestinations,
   subscribeFavorites,
   setFavoriteNote,
   clearFavorites,
   removeFavorite,
-} from '../data/favorites';
-import { formatFlightTime, type Destination } from '../data/destinations';
-import { getPreferences } from '../data/account';
+} from '../../data/favorites';
+import { formatFlightTime, type Destination } from '../../data/destinations';
+import { getPreferences } from '../../data/account';
 
 const HPAD = spacing.lg;
 
@@ -90,6 +90,7 @@ export default function Saved() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <TabScreenEnter variant="saved" backgroundColor={palette.white}>
       <View style={s.header}>
         <View style={{ flex: 1 }}>
           <Text variant="h1">Saved</Text>
@@ -289,8 +290,7 @@ export default function Saved() {
         )}
         <View style={{ height: spacing.lg }} />
       </ScrollView>
-
-      <BottomNav active="saved" />
+      </TabScreenEnter>
 
       <DestinationSheet
         destination={destination}

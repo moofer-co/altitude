@@ -3,9 +3,9 @@ import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { Text, Plane } from '../components/ui';
-import { BottomNav } from '../components/BottomNav';
-import { palette, spacing, radii, shadows } from '../constants/tokens';
+import { Text, Plane } from '../../components/ui';
+import { TabScreenEnter } from '../../components/TabScreenEnter';
+import { palette, spacing, radii, shadows } from '../../constants/tokens';
 import {
   allTrips,
   groupTrips,
@@ -13,7 +13,7 @@ import {
   routeString,
   tripsNeedingAttention,
   type NextAction,
-} from '../data/trips';
+} from '../../data/trips';
 import {
   tripStatus,
   STATUS_META,
@@ -22,7 +22,7 @@ import {
   countdownTo,
   useNow,
   type Trip,
-} from '../data/trip';
+} from '../../data/trip';
 
 const HPAD = spacing.lg;
 
@@ -66,6 +66,7 @@ export default function Trips() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <TabScreenEnter variant="trips" backgroundColor={palette.gray50}>
       <View style={s.header}>
         <View style={{ flex: 1 }}>
           <Text variant="h1">Trips</Text>
@@ -153,8 +154,7 @@ export default function Trips() {
 
         <View style={{ height: spacing.xl }} />
       </ScrollView>
-
-      <BottomNav active="trips" />
+      </TabScreenEnter>
     </SafeAreaView>
   );
 }

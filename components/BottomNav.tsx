@@ -1,7 +1,7 @@
 import { View, Pressable, StyleSheet } from 'react-native';
-import { useRouter, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
 import { Text } from './ui';
 import { palette, spacing } from '../constants/tokens';
 
@@ -11,40 +11,24 @@ const TABS: {
   id: TabId;
   label: string;
   icon: keyof typeof Feather.glyphMap;
-  route: string;
 }[] = [
-  { id: 'home', label: 'Explore', icon: 'compass', route: '/home' },
-  { id: 'trips', label: 'Trips', icon: 'map', route: '/trips' },
-  { id: 'saved', label: 'Saved', icon: 'heart', route: '/saved' },
-  { id: 'account', label: 'Account', icon: 'user', route: '/account' },
+  { id: 'home', label: 'Explore', icon: 'compass' },
+  { id: 'trips', label: 'Trips', icon: 'map' },
+  { id: 'saved', label: 'Saved', icon: 'heart' },
+  { id: 'account', label: 'Account', icon: 'user' },
 ];
 
-function tabFromPath(path: string | null): TabId | null {
-  if (!path) return null;
-  if (path.includes('home')) return 'home';
-  if (path.includes('trips')) return 'trips';
-  if (path.includes('saved')) return 'saved';
-  if (path.includes('account')) return 'account';
-  return null;
-}
-
 /**
- * Primary app chrome — Explore / Trips / Saved / Account.
- * Shown on main tab screens only (not auth, search, booking, etc.).
+ * Persistent app chrome — stays mounted while tab scenes dissolve.
+ * Wired as the Tabs `tabBar` so it never slides with stack transitions.
  */
-export function BottomNav({ active }: { active?: TabId }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const insets = useSafeAreaInsets();
-  const current = active ?? tabFromPath(pathname) ?? 'home';
+export function BottomNav({ state, navigation, insets }: BottomTabBarProps) {
+  const safe = useSafeAreaInsets();
+  const bottom = Math.max(insets?.bottom ?? 0, safe.bottom, spacing.sm);
+  const current = (state.routes[state.index]?.name ?? 'home') as TabId;
 
   return (
-    <View
-      style={[
-        styles.bar,
-        { paddingBottom: Math.max(insets.bottom, spacing.sm) },
-      ]}
-    >
+    <View style={[styles.bar, { paddingBottom: bottom }]}>
       {TABS.map((tab) => {
         const on = tab.id === current;
         const tint = on ? palette.primary500 : palette.gray400;
@@ -54,7 +38,7 @@ export function BottomNav({ active }: { active?: TabId }) {
             style={styles.tab}
             onPress={() => {
               if (on) return;
-              router.replace(tab.route as never);
+              navigation.navigate(tab.id);
             }}
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
