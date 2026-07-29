@@ -219,7 +219,8 @@ export function TravellerUpdateSheet({
     >
       <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets>
+          automaticallyAdjustKeyboardInsets
+        >
         {editing ? (
           <>
             <Text variant="caption" color="textSecondary" style={{ marginBottom: 7 }}>
