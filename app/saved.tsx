@@ -15,19 +15,16 @@ import { Feather } from '@expo/vector-icons';
 import { Text, Button } from '../components/ui';
 import { BottomNav } from '../components/BottomNav';
 import { DestinationSheet } from '../components/DestinationSheet';
-import { WeatherIcon } from '../components/WeatherIcon';
 import { palette, spacing, radii } from '../constants/tokens';
 import {
   favoriteDestinations,
   subscribeFavorites,
-  toggleFavorite,
   setFavoriteNote,
   clearFavorites,
   removeFavorite,
 } from '../data/favorites';
 import { formatFlightTime, type Destination } from '../data/destinations';
 import { getPreferences } from '../data/account';
-import { weatherFor } from '../data/weather';
 
 const HPAD = spacing.lg;
 
@@ -164,7 +161,8 @@ export default function Saved() {
               align="center"
               style={{ marginTop: spacing.sm }}
             >
-              Tap the heart on a destination in Explore to keep it here for later.
+              Open a destination from Explore and tap the heart on the detail
+              sheet to keep it here.
             </Text>
             <Button
               label="Explore destinations"
@@ -175,24 +173,12 @@ export default function Saved() {
           </View>
         ) : (
           items.map((d) => {
-            const wx = weatherFor(`${d.city}-${d.iata}`);
             const editing = editingId === d.id;
             return (
               <View key={d.id} style={s.card}>
                 <Pressable onPress={() => setDestination(d)}>
                   <Image source={{ uri: d.image }} style={s.image} />
                   <View style={s.scrim} />
-                  <View style={s.weather}>
-                    <WeatherIcon kind={wx.kind} size={20} />
-                  </View>
-                  <Pressable
-                    style={s.heart}
-                    onPress={() => unsave(d.id)}
-                    hitSlop={8}
-                    accessibilityLabel={`Remove ${d.city} from saved`}
-                  >
-                    <Feather name="heart" size={18} color={palette.error} />
-                  </Pressable>
                   <View style={s.cardBody}>
                     <Text style={s.city}>{d.city}</Text>
                     <Text variant="caption" style={{ color: 'rgba(255,255,255,0.9)' }}>
@@ -265,6 +251,17 @@ export default function Saved() {
 
                   <View style={s.actions}>
                     <Pressable
+                      style={s.ghostBtn}
+                      onPress={() => unsave(d.id)}
+                    >
+                      <Text
+                        variant="bodySmall"
+                        style={{ color: palette.error, fontWeight: '600' }}
+                      >
+                        Remove
+                      </Text>
+                    </Pressable>
+                    <Pressable
                       style={s.secondaryBtn}
                       onPress={() => setDestination(d)}
                     >
@@ -280,7 +277,7 @@ export default function Saved() {
                         variant="bodySmall"
                         style={{ color: palette.white, fontWeight: '600' }}
                       >
-                        Find flights
+                        Flights
                       </Text>
                       <Feather name="arrow-right" size={14} color={palette.white} />
                     </Pressable>
@@ -377,28 +374,6 @@ const s = StyleSheet.create({
     height: 168,
     backgroundColor: 'rgba(0,0,0,0.28)',
   },
-  weather: {
-    position: 'absolute',
-    top: spacing.sm,
-    left: spacing.sm,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heart: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   cardBody: {
     position: 'absolute',
     left: spacing.md,
@@ -440,6 +415,13 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
   },
+  ghostBtn: {
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   secondaryBtn: {
     flex: 1,
     minHeight: 44,
@@ -450,7 +432,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   primaryBtn: {
-    flex: 1.2,
+    flex: 1.1,
     minHeight: 44,
     borderRadius: radii.full,
     backgroundColor: palette.primary500,

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import {
   View,
   ScrollView,
@@ -21,7 +21,7 @@ import { LocationSheet } from '../components/LocationSheet';
 import { DestinationSheet } from '../components/DestinationSheet';
 import { PaxSheet } from '../components/PaxSheet';
 import { GlowingPaxButton } from '../components/GlowingPaxButton';
-import { WeatherIcon, WeatherPill } from '../components/WeatherIcon';
+import { WeatherPill } from '../components/WeatherIcon';
 import { BottomNav } from '../components/BottomNav';
 import {
   SearchMorphOverlay,
@@ -36,12 +36,7 @@ import {
   type Destination,
   type NearbyAirport,
 } from '../data/destinations';
-import { homeWeather, weatherFor } from '../data/weather';
-import {
-  isFavorite,
-  toggleFavorite,
-  subscribeFavorites,
-} from '../data/favorites';
+import { homeWeather } from '../data/weather';
 
 const { width: SW } = Dimensions.get('window');
 const HPAD = spacing.lg;
@@ -102,9 +97,6 @@ export default function Home() {
   const [paxOpen, setPaxOpen] = useState(false);
   const [morphFrom, setMorphFrom] = useState<SearchBarRect | null>(null);
   const [morphing, setMorphing] = useState(false);
-  const [favTick, setFavTick] = useState(0);
-
-  useEffect(() => subscribeFavorites(() => setFavTick((n) => n + 1)), []);
 
   const pinned = useRef(new Animated.Value(0)).current;
   const homeFade = useRef(new Animated.Value(1)).current;
@@ -334,9 +326,6 @@ export default function Home() {
         >
           {dealsNow.map(({ dest, saving }) => {
             const pct = Math.round((saving / dest.typicalPrice) * 100);
-            const wx = weatherFor(`${dest.city}-${dest.iata}`);
-            const saved = isFavorite(dest.id);
-            void favTick;
             return (
               <PressCard
                 key={dest.id}
@@ -349,24 +338,6 @@ export default function Home() {
                   <Text variant="caption" style={{ color: palette.white, fontWeight: '700' }}>
                     {pct}% off
                   </Text>
-                </View>
-                <Pressable
-                  style={s.dealHeart}
-                  onPress={() => {
-                    const on = toggleFavorite(dest.id);
-                    showNotice(on ? `Saved ${dest.city}` : `Removed ${dest.city}`);
-                  }}
-                  hitSlop={6}
-                  accessibilityLabel={saved ? 'Remove from saved' : 'Save destination'}
-                >
-                  <Feather
-                    name="heart"
-                    size={16}
-                    color={saved ? palette.error : palette.gray700}
-                  />
-                </Pressable>
-                <View style={s.dealWeather} accessibilityLabel={wx.label}>
-                  <WeatherIcon kind={wx.kind} size={22} />
                 </View>
                 <View style={s.dealBody}>
                   <Text variant="bodyMedium" style={{ color: palette.white }}>
@@ -399,11 +370,7 @@ export default function Home() {
         </View>
 
         <View style={s.grid}>
-          {weekendEscapes.map((d) => {
-            const wx = weatherFor(`${d.city}-${d.iata}`);
-            const saved = isFavorite(d.id);
-            void favTick;
-            return (
+          {weekendEscapes.map((d) => (
             <PressCard
               key={d.id}
               style={s.gridCard}
@@ -418,26 +385,6 @@ export default function Home() {
                   {formatFlightTime(d.flightMinutes)}
                 </Text>
               </View>
-
-              <View style={s.gridWeather} accessibilityLabel={wx.label}>
-                <WeatherIcon kind={wx.kind} size={24} />
-              </View>
-
-              <Pressable
-                style={s.gridHeart}
-                onPress={() => {
-                  const on = toggleFavorite(d.id);
-                  showNotice(on ? `Saved ${d.city}` : `Removed ${d.city}`);
-                }}
-                hitSlop={6}
-                accessibilityLabel={saved ? 'Remove from saved' : 'Save destination'}
-              >
-                <Feather
-                  name="heart"
-                  size={16}
-                  color={saved ? palette.error : palette.gray700}
-                />
-              </Pressable>
 
               <View style={s.gridBody}>
                 <Text style={s.gridCity}>{d.city}</Text>
@@ -455,8 +402,7 @@ export default function Home() {
                 </View>
               </View>
             </PressCard>
-            );
-          })}
+          ))}
         </View>
 
         <View style={{ height: spacing.lg }} />
@@ -690,28 +636,6 @@ const s = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: radii.sm,
   },
-  dealWeather: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: 46,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dealHeart: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   dealBody: { padding: spacing.md },
 
   // Grid
@@ -755,28 +679,6 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
     borderRadius: radii.sm,
-  },
-  gridWeather: {
-    position: 'absolute',
-    top: spacing.sm,
-    left: spacing.sm,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gridHeart: {
-    position: 'absolute',
-    top: 44,
-    left: spacing.sm,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   gridBody: { padding: spacing.md },
   gridCity: {
