@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -23,91 +23,29 @@ type TravelKind =
   | 'compass'
   | 'sun';
 
-type Bubble = {
+type ElementSpec = {
   kind: TravelKind;
-  /** Angle on the ring in degrees (0 = right, CCW). */
-  angle: number;
   size: number;
   color: string;
-  iconColor?: string;
-  orbit: 'outer' | 'inner';
-  delay: number;
+  iconColor: string;
+  /** Stagger so elements never sync up. */
+  startDelay: number;
 };
 
-const BUBBLES: Bubble[] = [
-  {
-    kind: 'passport',
-    angle: -38,
-    size: 54,
-    color: palette.primary500,
-    iconColor: palette.white,
-    orbit: 'outer',
-    delay: 140,
-  },
-  {
-    kind: 'plane',
-    angle: 32,
-    size: 46,
-    color: '#F59E0B',
-    iconColor: palette.white,
-    orbit: 'outer',
-    delay: 280,
-  },
-  {
-    kind: 'pin',
-    angle: 128,
-    size: 42,
-    color: '#EC4899',
-    iconColor: palette.white,
-    orbit: 'outer',
-    delay: 420,
-  },
-  {
-    kind: 'globe',
-    angle: 205,
-    size: 48,
-    color: '#16A34A',
-    iconColor: palette.white,
-    orbit: 'outer',
-    delay: 560,
-  },
-  {
-    kind: 'bag',
-    angle: 255,
-    size: 40,
-    color: '#0D9488',
-    iconColor: palette.white,
-    orbit: 'inner',
-    delay: 220,
-  },
-  {
-    kind: 'ticket',
-    angle: 58,
-    size: 36,
-    color: '#A78BFA',
-    iconColor: palette.white,
-    orbit: 'inner',
-    delay: 360,
-  },
-  {
-    kind: 'compass',
-    angle: 165,
-    size: 34,
-    color: '#F472B6',
-    iconColor: palette.white,
-    orbit: 'inner',
-    delay: 500,
-  },
-  {
-    kind: 'sun',
-    angle: 315,
-    size: 30,
-    color: '#FBBF24',
-    iconColor: '#78350F',
-    orbit: 'inner',
-    delay: 640,
-  },
+const ELEMENTS: ElementSpec[] = [
+  { kind: 'passport', size: 50, color: palette.primary500, iconColor: palette.white, startDelay: 200 },
+  { kind: 'plane', size: 44, color: '#F59E0B', iconColor: palette.white, startDelay: 1100 },
+  { kind: 'globe', size: 46, color: '#16A34A', iconColor: palette.white, startDelay: 2100 },
+  { kind: 'pin', size: 40, color: '#EC4899', iconColor: palette.white, startDelay: 3200 },
+  { kind: 'bag', size: 38, color: '#0D9488', iconColor: palette.white, startDelay: 4300 },
+  { kind: 'compass', size: 36, color: '#A78BFA', iconColor: palette.white, startDelay: 5400 },
+  { kind: 'ticket', size: 34, color: '#F472B6', iconColor: palette.white, startDelay: 6600 },
+  { kind: 'sun', size: 32, color: '#FBBF24', iconColor: '#78350F', startDelay: 7800 },
 ];
+
+function rand(min: number, max: number) {
+  return min + Math.random() * (max - min);
+}
 
 function TravelIcon({
   kind,
@@ -218,69 +156,190 @@ function GlowRing({
   );
 }
 
-function OrbitBubble({
-  bubble,
-  radius,
+type Pose = {
+  left: number;
+  top: number;
+  /** Drift direction in radians while visible. */
+  driftAngle: number;
+  /** Slow self-rotation sense. */
+  spinDir: 1 | -1;
+};
+
+function pickPose(
+  stageSize: number,
+  bubbleSize: number,
+  rMin: number,
+  rMax: number,
+): Pose {
+  const angle = Math.random() * Math.PI * 2;
+  const radius = rand(rMin, rMax);
+  const cx = stageSize / 2 + Math.cos(angle) * radius;
+  const cy = stageSize / 2 + Math.sin(angle) * radius;
+  return {
+    left: cx - bubbleSize / 2,
+    top: cy - bubbleSize / 2,
+    driftAngle: angle + rand(-0.6, 0.6),
+    spinDir: Math.random() > 0.5 ? 1 : -1,
+  };
+}
+
+function sleep(ms: number, signal: { cancelled: boolean }) {
+  return new Promise<void>((resolve) => {
+    const t = setTimeout(() => resolve(), ms);
+    if (signal.cancelled) {
+      clearTimeout(t);
+      resolve();
+    }
+  });
+}
+
+function runAnim(
+  anim: Animated.CompositeAnimation,
+  signal: { cancelled: boolean },
+) {
+  return new Promise<void>((resolve) => {
+    if (signal.cancelled) {
+      resolve();
+      return;
+    }
+    anim.start(({ finished }) => {
+      resolve();
+      if (!finished) {
+        // interrupted
+      }
+    });
+  });
+}
+
+/**
+ * One travel element: fades in at a random spot near the rings, drifts and
+ * rotates calmly, fades out, then later returns somewhere else.
+ * Lifecycles are staggered so the field never blinks in unison.
+ */
+function TravelElement({
+  spec,
   stageSize,
-  counterRotate,
+  rMin,
+  rMax,
 }: {
-  bubble: Bubble;
-  radius: number;
+  spec: ElementSpec;
   stageSize: number;
-  counterRotate: Animated.AnimatedInterpolation<string>;
+  rMin: number;
+  rMax: number;
 }) {
-  const pop = useRef(new Animated.Value(0)).current;
-  const bob = useRef(new Animated.Value(0)).current;
+  const [pose, setPose] = useState<Pose>(() =>
+    pickPose(stageSize, spec.size, rMin, rMax),
+  );
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(0.92)).current;
+  const drift = useRef(new Animated.Value(0)).current;
+  const spin = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.sequence([
-      Animated.delay(bubble.delay),
-      Animated.spring(pop, {
-        toValue: 1,
-        friction: 6,
-        tension: 80,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    const signal = { cancelled: false };
 
-    const drift = Animated.loop(
-      Animated.sequence([
-        Animated.timing(bob, {
-          toValue: 1,
-          duration: 2400 + (bubble.delay % 400),
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(bob, {
-          toValue: 0,
-          duration: 2400 + (bubble.delay % 400),
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    const t = setTimeout(() => drift.start(), bubble.delay + 450);
-    return () => {
-      clearTimeout(t);
-      drift.stop();
+    const cycle = async () => {
+      await sleep(spec.startDelay, signal);
+
+      while (!signal.cancelled) {
+        const next = pickPose(stageSize, spec.size, rMin, rMax);
+        setPose(next);
+        opacity.setValue(0);
+        scale.setValue(0.92);
+        drift.setValue(0);
+        spin.setValue(0);
+
+        // Soft appear
+        await runAnim(
+          Animated.parallel([
+            Animated.timing(opacity, {
+              toValue: 1,
+              duration: rand(650, 900),
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
+            Animated.timing(scale, {
+              toValue: 1,
+              duration: rand(650, 900),
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
+          ]),
+          signal,
+        );
+        if (signal.cancelled) break;
+
+        // Linger — gentle drift + slow rotate (mature, unhurried)
+        const linger = rand(3800, 6200);
+        const motion = Animated.parallel([
+          Animated.timing(drift, {
+            toValue: 1,
+            duration: linger,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(spin, {
+            toValue: 1,
+            duration: linger,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+        ]);
+        motion.start();
+        await sleep(linger, signal);
+        motion.stop();
+        if (signal.cancelled) break;
+
+        // Soft disappear
+        await runAnim(
+          Animated.parallel([
+            Animated.timing(opacity, {
+              toValue: 0,
+              duration: rand(550, 800),
+              easing: Easing.in(Easing.cubic),
+              useNativeDriver: true,
+            }),
+            Animated.timing(scale, {
+              toValue: 0.94,
+              duration: rand(550, 800),
+              easing: Easing.in(Easing.cubic),
+              useNativeDriver: true,
+            }),
+          ]),
+          signal,
+        );
+        if (signal.cancelled) break;
+
+        // Rest off-stage before returning elsewhere
+        await sleep(rand(1600, 4200), signal);
+      }
     };
-  }, [bob, bubble.delay, pop]);
 
-  const rad = (bubble.angle * Math.PI) / 180;
-  const cx = stageSize / 2 + Math.cos(rad) * radius;
-  const cy = stageSize / 2 + Math.sin(rad) * radius;
+    cycle();
+    return () => {
+      signal.cancelled = true;
+      opacity.stopAnimation();
+      scale.stopAnimation();
+      drift.stopAnimation();
+      spin.stopAnimation();
+    };
+  }, [drift, opacity, rMax, rMin, scale, spec.size, spec.startDelay, spin, stageSize]);
 
-  const scale = pop.interpolate({
+  const driftDist = 10;
+  const dx = Math.cos(pose.driftAngle) * driftDist;
+  const dy = Math.sin(pose.driftAngle) * driftDist;
+
+  const translateX = drift.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.15, 1],
+    outputRange: [0, dx],
   });
-  const opacity = pop.interpolate({
+  const translateY = drift.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 1],
+    outputRange: [0, dy],
   });
-  const bobY = bob.interpolate({
+  const rotate = spin.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, -4],
+    outputRange: pose.spinDir === 1 ? ['-12deg', '12deg'] : ['12deg', '-12deg'],
   });
 
   return (
@@ -289,29 +348,25 @@ function OrbitBubble({
       style={[
         styles.bubble,
         {
-          width: bubble.size,
-          height: bubble.size,
-          borderRadius: bubble.size / 2,
-          backgroundColor: bubble.color,
-          left: cx - bubble.size / 2,
-          top: cy - bubble.size / 2,
+          width: spec.size,
+          height: spec.size,
+          borderRadius: spec.size / 2,
+          backgroundColor: spec.color,
+          left: pose.left,
+          top: pose.top,
           opacity,
-          transform: [{ translateY: bobY }, { rotate: counterRotate }, { scale }],
+          transform: [{ translateX }, { translateY }, { rotate }, { scale }],
         },
       ]}
     >
-      <TravelIcon
-        kind={bubble.kind}
-        color={bubble.iconColor ?? palette.white}
-        size={bubble.size}
-      />
+      <TravelIcon kind={spec.kind} color={spec.iconColor} size={spec.size} />
     </AnimatedView>
   );
 }
 
 /**
- * Onboarding hero: user at the centre, glowing orbits, travel elements
- * popping into place — everything revolves around you.
+ * Onboarding hero: glowing earth-like rings, user at the centre,
+ * travel elements that quietly appear, drift, and leave — one by one.
  */
 export function OnboardingOrbit({
   size = 300,
@@ -324,98 +379,24 @@ export function OnboardingOrbit({
   const inner = size * 0.6;
   const avatar = Math.round(size * 0.26);
 
-  const outerBubbles = useMemo(
-    () => BUBBLES.filter((b) => b.orbit === 'outer'),
-    [],
-  );
-  const innerBubbles = useMemo(
-    () => BUBBLES.filter((b) => b.orbit === 'inner'),
-    [],
-  );
-
-  const outerSpin = useRef(new Animated.Value(0)).current;
-  const innerSpin = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const a = Animated.loop(
-      Animated.timing(outerSpin, {
-        toValue: 1,
-        duration: 52000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
-    const b = Animated.loop(
-      Animated.timing(innerSpin, {
-        toValue: 1,
-        duration: 38000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
-    a.start();
-    b.start();
-    return () => {
-      a.stop();
-      b.stop();
-    };
-  }, [innerSpin, outerSpin]);
-
-  const outerRot = outerSpin.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-  const innerRot = innerSpin.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['360deg', '0deg'],
-  });
-  const outerCounter = outerSpin.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '-360deg'],
-  });
-  const innerCounter = innerSpin.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
+  // Spawn band between the rings (with a little room outside)
+  const rMin = inner / 2 - 6;
+  const rMax = outer / 2 + 10;
 
   return (
     <View style={[styles.root, { width: size, height: size }, style]}>
       <GlowRing size={outer} duration={7200} strokeWidth={2.2} />
       <GlowRing size={inner} duration={5400} reverse soft strokeWidth={1.8} />
 
-      <AnimatedView
-        style={[
-          styles.carrier,
-          { width: size, height: size, transform: [{ rotate: outerRot }] },
-        ]}
-      >
-        {outerBubbles.map((b) => (
-          <OrbitBubble
-            key={`o-${b.kind}-${b.angle}`}
-            bubble={b}
-            radius={outer / 2}
-            stageSize={size}
-            counterRotate={outerCounter}
-          />
-        ))}
-      </AnimatedView>
-
-      <AnimatedView
-        style={[
-          styles.carrier,
-          { width: size, height: size, transform: [{ rotate: innerRot }] },
-        ]}
-      >
-        {innerBubbles.map((b) => (
-          <OrbitBubble
-            key={`i-${b.kind}-${b.angle}`}
-            bubble={b}
-            radius={inner / 2}
-            stageSize={size}
-            counterRotate={innerCounter}
-          />
-        ))}
-      </AnimatedView>
+      {ELEMENTS.map((spec) => (
+        <TravelElement
+          key={spec.kind}
+          spec={spec}
+          stageSize={size}
+          rMin={rMin}
+          rMax={rMax}
+        />
+      ))}
 
       <View
         style={[
@@ -447,20 +428,15 @@ const styles = StyleSheet.create({
   baseRing: {
     position: 'absolute',
   },
-  carrier: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-  },
   bubble: {
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
   },
   avatar: {
     backgroundColor: '#FDE68A',
