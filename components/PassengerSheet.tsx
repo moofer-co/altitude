@@ -141,6 +141,7 @@ export function PassengerSheet({
           contentContainerStyle={s.body}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         >
           {submitted && totalErrors > 0 && (
             <View style={s.alert}>
