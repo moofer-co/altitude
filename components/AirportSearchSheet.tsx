@@ -2,19 +2,18 @@ import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   TextInput,
-  SectionList,
   Pressable,
   StyleSheet,
   Keyboard,
   LayoutAnimation,
+  ScrollView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
-import { AlphabetScrubber } from './AlphabetScrubber';
+import { AirportAlphabetList } from './AirportAlphabetList';
 import { palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports } from '../data/airports';
-import { groupAirportsByLetter, searchAirports } from '../lib/airportSearch';
-import { scrollAirportListToLetter } from '../lib/scrollToLetter';
+import { searchAirports } from '../lib/airportSearch';
 import { useKeyboardLift } from '../hooks/useKeyboardLift';
 import type { Airport } from '../types';
 
@@ -36,8 +35,8 @@ function HighlightedText({ text, highlight }: { text: string; highlight: string 
 }
 
 /**
- * Same interaction as `app/airport-search.tsx`: bottom search field, Z→A list,
- * magnified alphabet scrubber, and highlighted "Did you mean" results.
+ * Same interaction as airport search: Z→A list, working scrubber,
+ * bottom search field, highlighted results.
  */
 export function AirportSearchSheet({
   visible,
@@ -56,48 +55,26 @@ export function AirportSearchSheet({
 }) {
   const [query, setQuery] = useState('');
   const inputRef = useRef<TextInput>(null);
-  const listRef = useRef<SectionList<Airport>>(null);
-  const pendingLetter = useRef<string | null>(null);
   const keyboardLift = useKeyboardLift();
 
   useEffect(() => {
     if (!visible) return;
     setQuery('');
-    pendingLetter.current = null;
     const t = setTimeout(() => inputRef.current?.focus(), 350);
     return () => clearTimeout(t);
   }, [visible]);
 
   const isSearching = query.length > 0;
-  const sections = useMemo(() => groupAirportsByLetter(allAirports), []);
   const searchResults = useMemo(
     () => (isSearching ? searchAirports(query, allAirports) : []),
     [query, isSearching],
   );
-  const activeLetters = useMemo(
-    () => new Set(sections.map((s) => s.title)),
-    [sections],
-  );
-
-  const scrollToLetter = useCallback(
-    (letter: string) => {
-      scrollAirportListToLetter(listRef, sections, letter);
-    },
-    [sections],
-  );
-
-  useEffect(() => {
-    if (isSearching || !pendingLetter.current) return;
-    const letter = pendingLetter.current;
-    pendingLetter.current = null;
-    const t = setTimeout(() => scrollToLetter(letter), 32);
-    return () => clearTimeout(t);
-  }, [isSearching, scrollToLetter]);
 
   const beginScrub = useCallback(() => {
     Keyboard.dismiss();
     inputRef.current?.blur();
-  }, []);
+    if (query.length > 0) setQuery('');
+  }, [query]);
 
   const handleSelect = useCallback(
     (airport: Airport) => {
@@ -106,20 +83,6 @@ export function AirportSearchSheet({
       onClose();
     },
     [onSelect, onClose],
-  );
-
-  const handleScrubberSelect = useCallback(
-    (letter: string) => {
-      Keyboard.dismiss();
-      inputRef.current?.blur();
-      if (query.length > 0) {
-        pendingLetter.current = letter;
-        setQuery('');
-        return;
-      }
-      scrollToLetter(letter);
-    },
-    [query, scrollToLetter],
   );
 
   return (
@@ -131,9 +94,21 @@ export function AirportSearchSheet({
       heightRatio={0.94}
     >
       <View style={styles.content}>
-        <View style={styles.listContainer}>
-          {isSearching ? (
-            <View style={styles.searchResults}>
+        <AirportAlphabetList
+          airports={allAirports}
+          selectedIata={selectedIata}
+          onSelectAirport={handleSelect}
+          onScrubStart={beginScrub}
+        />
+
+        {isSearching && (
+          <View style={styles.searchOverlay} pointerEvents="auto">
+            <ScrollView
+              style={styles.searchResults}
+              contentContainerStyle={styles.searchResultsContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
               {searchResults.length > 0 ? (
                 <>
                   <Text
@@ -173,55 +148,9 @@ export function AirportSearchSheet({
                   </Text>
                 </View>
               )}
-            </View>
-          ) : (
-            <SectionList
-              ref={listRef}
-              style={styles.list}
-              sections={sections}
-              keyExtractor={(item, index) => `${item.iata}-${item.city}-${index}`}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.airportRow,
-                    pressed && styles.airportRowPressed,
-                    selectedIata === item.iata && styles.rowSelected,
-                  ]}
-                  onPress={() => handleSelect(item)}
-                >
-                  <Text style={styles.airportCity}>
-                    {item.city} ({item.iata})
-                  </Text>
-                  {selectedIata === item.iata && (
-                    <Feather name="check" size={18} color={palette.primary600} />
-                  )}
-                </Pressable>
-              )}
-              renderSectionFooter={({ section }) => (
-                <Text style={styles.sectionLabel}>{section.title}</Text>
-              )}
-              stickySectionHeadersEnabled={false}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.listContent}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-              onScrollToIndexFailed={(info) => {
-                const y = Math.max(
-                  0,
-                  info.averageItemLength * info.highestMeasuredFrameIndex,
-                );
-                listRef.current
-                  ?.getScrollResponder()
-                  ?.scrollTo({ y, animated: false });
-              }}
-            />
-          )}
-          <AlphabetScrubber
-            activeLetters={activeLetters}
-            onScrubStart={beginScrub}
-            onSelect={handleScrubberSelect}
-          />
-        </View>
+            </ScrollView>
+          </View>
+        )}
       </View>
 
       <View style={[styles.searchBar, { marginBottom: spacing.md + keyboardLift }]}>
@@ -262,49 +191,19 @@ export function AirportSearchSheet({
 }
 
 const styles = StyleSheet.create({
-  content: { flex: 1 },
+  content: { flex: 1, position: 'relative' },
 
-  listContainer: { flex: 1, flexDirection: 'row' },
-  list: { flex: 1 },
-  listContent: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    paddingRight: 36,
+  searchOverlay: {
+    ...StyleSheet.absoluteFill,
+    right: 36,
+    backgroundColor: palette.white,
+    zIndex: 10,
   },
-  airportRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xs,
-    borderRadius: radii.sm,
-  },
-  airportRowPressed: { backgroundColor: palette.gray50 },
-  rowSelected: { backgroundColor: palette.primary50 },
-  airportCity: {
-    fontSize: 20,
-    lineHeight: 28,
-    fontWeight: '400',
-    color: palette.gray900,
-    flex: 1,
-  },
-  airportCityBold: {
-    fontWeight: '700',
-    color: palette.gray900,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: palette.gray400,
-    letterSpacing: 1,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
-  },
-
-  searchResults: {
-    flex: 1,
+  searchResults: { flex: 1 },
+  searchResultsContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
+    paddingBottom: spacing.md,
   },
   didYouMean: {
     marginBottom: spacing.sm,
@@ -319,9 +218,21 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
   },
   resultRowPressed: { backgroundColor: palette.gray50 },
+  rowSelected: { backgroundColor: palette.primary50 },
   noResults: {
     paddingTop: spacing.xl,
     gap: spacing.xs,
+  },
+  airportCity: {
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: '400',
+    color: palette.gray900,
+    flex: 1,
+  },
+  airportCityBold: {
+    fontWeight: '700',
+    color: palette.gray900,
   },
 
   searchBar: {

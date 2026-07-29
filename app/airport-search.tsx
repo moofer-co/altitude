@@ -2,19 +2,19 @@ import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   TextInput,
-  SectionList,
   Pressable,
   StyleSheet,
   Keyboard,
   LayoutAnimation,
   Animated,
   Easing,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, Row } from '../components/ui';
-import { AlphabetScrubber } from '../components/AlphabetScrubber';
+import { AirportAlphabetList } from '../components/AirportAlphabetList';
 import { AirportSearchSheet } from '../components/AirportSearchSheet';
 import { palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports, airports } from '../data/airports';
@@ -23,8 +23,7 @@ import {
   updatePreferences,
   subscribePreferences,
 } from '../data/account';
-import { groupAirportsByLetter, searchAirports } from '../lib/airportSearch';
-import { scrollAirportListToLetter } from '../lib/scrollToLetter';
+import { searchAirports } from '../lib/airportSearch';
 import { useKeyboardLift } from '../hooks/useKeyboardLift';
 import type { Airport } from '../types';
 
@@ -62,10 +61,7 @@ export default function AirportSearch() {
   const [homeOpen, setHomeOpen] = useState(false);
   const [prefs, setPrefs] = useState(getPreferences);
   const inputRef = useRef<TextInput>(null);
-  const listRef = useRef<SectionList<Airport>>(null);
-  const pendingLetter = useRef<string | null>(null);
 
-  // Staged entrance: list → search field → home airport pill
   const listEnter = useRef(new Animated.Value(fromMorph ? 0 : 1)).current;
   const searchEnter = useRef(new Animated.Value(fromMorph ? 0 : 1)).current;
   const headerEnter = useRef(new Animated.Value(fromMorph ? 0 : 1)).current;
@@ -79,7 +75,6 @@ export default function AirportSearch() {
     }
 
     const ease = Easing.out(Easing.cubic);
-
     Animated.sequence([
       Animated.delay(40),
       Animated.parallel([
@@ -119,56 +114,23 @@ export default function AirportSearch() {
   }, [prefs.homeAirport]);
 
   const isSearching = query.length > 0;
-  const sections = useMemo(() => groupAirportsByLetter(allAirports), []);
   const searchResults = useMemo(
     () => (isSearching ? searchAirports(query, allAirports) : []),
     [query, isSearching],
   );
-  const activeLetters = useMemo(
-    () => new Set(sections.map((s) => s.title)),
-    [sections],
-  );
-
-  const scrollToLetter = useCallback(
-    (letter: string) => {
-      scrollAirportListToLetter(listRef, sections, letter);
-    },
-    [sections],
-  );
-
-  // After clearing search for a scrub, scroll once the list is back
-  useEffect(() => {
-    if (isSearching || !pendingLetter.current) return;
-    const letter = pendingLetter.current;
-    pendingLetter.current = null;
-    const t = setTimeout(() => scrollToLetter(letter), 32);
-    return () => clearTimeout(t);
-  }, [isSearching, scrollToLetter]);
-
-  const beginScrub = useCallback(() => {
-    Keyboard.dismiss();
-    inputRef.current?.blur();
-  }, []);
 
   const handleSelect = useCallback((airport: Airport) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSelected(airport);
     Keyboard.dismiss();
+    inputRef.current?.blur();
   }, []);
 
-  const handleScrubberSelect = useCallback(
-    (letter: string) => {
-      Keyboard.dismiss();
-      inputRef.current?.blur();
-      if (query.length > 0) {
-        pendingLetter.current = letter;
-        setQuery('');
-        return;
-      }
-      scrollToLetter(letter);
-    },
-    [query, scrollToLetter],
-  );
+  const beginScrub = useCallback(() => {
+    Keyboard.dismiss();
+    inputRef.current?.blur();
+    if (query.length > 0) setQuery('');
+  }, [query]);
 
   const handleClear = useCallback(() => {
     setQuery('');
@@ -184,19 +146,7 @@ export default function AirportSearch() {
       style={[styles.safe, keyboardLift > 0 && { marginBottom: keyboardLift }]}
       edges={['top', 'bottom']}
     >
-      <Animated.View
-        style={{
-          opacity: headerEnter,
-          transform: [
-            {
-              translateY: headerEnter.interpolate({
-                inputRange: [0, 1],
-                outputRange: [-6, 0],
-              }),
-            },
-          ],
-        }}
-      >
+      <Animated.View style={{ opacity: headerEnter }}>
         <Row justify="space-between" style={styles.header}>
           <Pressable
             style={styles.locationPill}
@@ -231,25 +181,23 @@ export default function AirportSearch() {
         </View>
       )}
 
-      <Animated.View
-        style={[
-          styles.content,
-          {
-            opacity: listEnter,
-            transform: [
-              {
-                translateY: listEnter.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [12, 0],
-                }),
-              },
-            ],
-          },
-        ]}
-      >
-        <View style={styles.listContainer}>
-          {isSearching ? (
-            <View style={styles.searchResults}>
+      {/* Opacity-only entrance — transforms break scrubber hit-testing */}
+      <Animated.View style={[styles.content, { opacity: listEnter }]}>
+        <AirportAlphabetList
+          airports={allAirports}
+          selectedIata={selected?.iata}
+          onSelectAirport={handleSelect}
+          onScrubStart={beginScrub}
+        />
+
+        {isSearching && (
+          <View style={styles.searchOverlay} pointerEvents="auto">
+            <ScrollView
+              style={styles.searchResults}
+              contentContainerStyle={styles.searchResultsContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
               {searchResults.length > 0 ? (
                 <>
                   <Text
@@ -285,66 +233,12 @@ export default function AirportSearch() {
                   </Text>
                 </View>
               )}
-            </View>
-          ) : (
-            <SectionList
-              ref={listRef}
-              style={styles.list}
-              sections={sections}
-              keyExtractor={(item, index) => `${item.iata}-${item.city}-${index}`}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.airportRow,
-                    pressed && styles.airportRowPressed,
-                  ]}
-                  onPress={() => handleSelect(item)}
-                >
-                  <Text style={styles.airportCity}>
-                    {item.city} ({item.iata})
-                  </Text>
-                </Pressable>
-              )}
-              renderSectionFooter={({ section }) => (
-                <Text style={styles.sectionLabel}>{section.title}</Text>
-              )}
-              stickySectionHeadersEnabled={false}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.listContent}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-              onScrollToIndexFailed={(info) => {
-                const y = Math.max(
-                  0,
-                  info.averageItemLength * info.highestMeasuredFrameIndex,
-                );
-                listRef.current
-                  ?.getScrollResponder()
-                  ?.scrollTo({ y, animated: false });
-              }}
-            />
-          )}
-          <AlphabetScrubber
-            activeLetters={activeLetters}
-            onScrubStart={beginScrub}
-            onSelect={handleScrubberSelect}
-          />
-        </View>
+            </ScrollView>
+          </View>
+        )}
       </Animated.View>
 
-      <Animated.View
-        style={{
-          opacity: searchEnter,
-          transform: [
-            {
-              translateY: searchEnter.interpolate({
-                inputRange: [0, 1],
-                outputRange: [10, 0],
-              }),
-            },
-          ],
-        }}
-      >
+      <Animated.View style={{ opacity: searchEnter }}>
         <View style={styles.searchBar}>
           <Feather
             name="search"
@@ -365,6 +259,7 @@ export default function AirportSearch() {
             selectionColor={palette.primary500}
             autoFocus={false}
             returnKeyType="search"
+            autoCorrect={false}
           />
           {query.length > 0 && (
             <Pressable onPress={handleClear} hitSlop={8}>
@@ -438,47 +333,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  listContainer: {
-    flex: 1,
-    flexDirection: 'row',
+  searchOverlay: {
+    ...StyleSheet.absoluteFill,
+    right: 36,
+    backgroundColor: palette.white,
+    zIndex: 10,
   },
-  list: {
-    flex: 1,
-  },
-  listContent: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    paddingRight: 36,
-  },
-  airportRow: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xs,
-    borderRadius: radii.sm,
-  },
-  airportRowPressed: {
-    backgroundColor: palette.gray50,
-  },
-  airportCity: {
-    fontSize: 20,
-    lineHeight: 28,
-    fontWeight: '400',
-    color: palette.gray900,
-  },
-  airportCityBold: {
-    fontWeight: '700',
-    color: palette.gray900,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: palette.gray400,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.xs,
-  },
-
   searchResults: {
     flex: 1,
+  },
+  searchResultsContent: {
+    flexGrow: 1,
     justifyContent: 'flex-end',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
@@ -498,6 +363,16 @@ const styles = StyleSheet.create({
   noResults: {
     gap: spacing.xs,
     paddingBottom: spacing.xl,
+  },
+  airportCity: {
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: '400',
+    color: palette.gray900,
+  },
+  airportCityBold: {
+    fontWeight: '700',
+    color: palette.gray900,
   },
 
   searchBar: {

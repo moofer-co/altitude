@@ -3,27 +3,24 @@ import {
   View,
   Text,
   StyleSheet,
-  PanResponder,
   Animated,
   LayoutChangeEvent,
+  type GestureResponderEvent,
 } from 'react-native';
 import { palette, radii, shadows } from '../constants/tokens';
 
 /** Z→A — matches the airport list grouping. */
 export const LETTERS_ZA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').reverse();
 
-const TRACK_W = 32;
+const TRACK_W = 36;
 const BUBBLE = 56;
 const BASE_SIZE = 11;
-/** How many letters either side of the focus get fisheye scale. */
 const MAG_RADIUS = 2;
 
 /**
  * Apple Contacts–style alphabet scrubber.
- *
- * Drag (or tap) along the index: the focused letter zooms with a soft
- * fisheye on its neighbours, and a floating lens bubble shows which letter
- * you are on. Used by airport search and the home-airport sheet alike.
+ * Uses the responder system (not PanResponder) so touches stay reliable
+ * next to a scrolling list and under keyboard dismiss.
  */
 export function AlphabetScrubber({
   activeLetters,
@@ -33,7 +30,6 @@ export function AlphabetScrubber({
 }: {
   activeLetters: Set<string>;
   onSelect: (letter: string) => void;
-  /** Fired on touch-down — dismiss keyboard before scrolling. */
   onScrubStart?: () => void;
   letters?: string[];
 }) {
@@ -101,19 +97,22 @@ export function AlphabetScrubber({
       const h = heightRef.current;
       if (h <= 0) return -1;
       const clamped = Math.max(0, Math.min(h - 1, y));
-      return Math.min(letters.length - 1, Math.floor((clamped / h) * letters.length));
+      return Math.min(
+        letters.length - 1,
+        Math.floor((clamped / h) * letters.length),
+      );
     },
     [letters.length],
   );
 
   const selectAt = useCallback(
-    (index: number, announce: boolean) => {
+    (index: number) => {
       if (index < 0 || index >= letters.length) return;
       const letter = letters[index];
       setFocusIndex(index);
       animateScales(index, true);
       showBubble(index);
-      if (announce && index !== lastIndex.current) {
+      if (index !== lastIndex.current) {
         lastIndex.current = index;
         if (activeLetters.has(letter)) onSelect(letter);
       }
@@ -129,39 +128,21 @@ export function AlphabetScrubber({
     hideBubble();
   }, [animateScales, hideBubble]);
 
-  // Keep pan handlers on fresh closures — PanResponder is created once
-  const indexFromYRef = useRef(indexFromY);
-  const selectAtRef = useRef(selectAt);
-  const endScrubRef = useRef(endScrub);
-  const onScrubStartRef = useRef(onScrubStart);
-  useEffect(() => {
-    indexFromYRef.current = indexFromY;
-    selectAtRef.current = selectAt;
-    endScrubRef.current = endScrub;
-    onScrubStartRef.current = onScrubStart;
-  }, [indexFromY, selectAt, endScrub, onScrubStart]);
+  const handleGrant = useCallback(
+    (e: GestureResponderEvent) => {
+      onScrubStart?.();
+      setScrubbing(true);
+      selectAt(indexFromY(e.nativeEvent.locationY));
+    },
+    [onScrubStart, selectAt, indexFromY],
+  );
 
-  const pan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onStartShouldSetPanResponderCapture: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponderCapture: () => true,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (e) => {
-        onScrubStartRef.current?.();
-        setScrubbing(true);
-        const idx = indexFromYRef.current(e.nativeEvent.locationY);
-        selectAtRef.current(idx, true);
-      },
-      onPanResponderMove: (e) => {
-        const idx = indexFromYRef.current(e.nativeEvent.locationY);
-        selectAtRef.current(idx, true);
-      },
-      onPanResponderRelease: () => endScrubRef.current(),
-      onPanResponderTerminate: () => endScrubRef.current(),
-    }),
-  ).current;
+  const handleMove = useCallback(
+    (e: GestureResponderEvent) => {
+      selectAt(indexFromY(e.nativeEvent.locationY));
+    },
+    [selectAt, indexFromY],
+  );
 
   const onLayout = (e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;
@@ -172,7 +153,7 @@ export function AlphabetScrubber({
   const focusLetter = focusIndex >= 0 ? letters[focusIndex] : null;
 
   return (
-    <View style={styles.wrap} pointerEvents="box-none">
+    <View style={styles.wrap}>
       <Animated.View
         pointerEvents="none"
         style={[
@@ -189,7 +170,13 @@ export function AlphabetScrubber({
       <View
         style={[styles.track, scrubbing && styles.trackActive]}
         onLayout={onLayout}
-        {...pan.panHandlers}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderTerminationRequest={() => false}
+        onResponderGrant={handleGrant}
+        onResponderMove={handleMove}
+        onResponderRelease={endScrub}
+        onResponderTerminate={endScrub}
       >
         {height > 0 &&
           letters.map((letter, i) => {
@@ -204,6 +191,7 @@ export function AlphabetScrubber({
             return (
               <Animated.View
                 key={letter}
+                pointerEvents="none"
                 style={[
                   styles.slot,
                   { height: height / letters.length },
@@ -231,23 +219,21 @@ export function AlphabetScrubber({
 
 const styles = StyleSheet.create({
   wrap: {
+    flex: 1,
     width: TRACK_W,
-    alignSelf: 'stretch',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 8,
-    elevation: 8,
   },
   track: {
     width: TRACK_W,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
+    paddingVertical: 2,
     borderRadius: radii.full,
   },
   trackActive: {
-    backgroundColor: 'rgba(124, 58, 237, 0.06)',
+    backgroundColor: 'rgba(124, 58, 237, 0.08)',
   },
   slot: {
     width: TRACK_W,
@@ -277,13 +263,14 @@ const styles = StyleSheet.create({
   },
   bubble: {
     position: 'absolute',
-    right: TRACK_W + 4,
+    right: TRACK_W + 2,
     width: BUBBLE,
     height: BUBBLE,
     borderRadius: BUBBLE / 2,
     backgroundColor: palette.primary500,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 30,
     ...shadows.floating,
   },
   bubbleLetter: {
