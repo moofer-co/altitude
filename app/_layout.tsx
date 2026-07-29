@@ -21,12 +21,11 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="index" />
-        {/* Fade pairs with the home search morph — no slide jitter */}
+        {/* Instant handoff — home morph owns the transition */}
         <Stack.Screen
           name="airport-search"
           options={{
-            animation: 'fade',
-            animationDuration: 280,
+            animation: 'none',
           }}
         />
       </Stack>

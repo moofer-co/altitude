@@ -11,7 +11,7 @@ import {
   Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, Row } from '../components/ui';
 import { AlphabetScrubber } from '../components/AlphabetScrubber';
@@ -51,29 +51,61 @@ function HighlightedText({ text, highlight }: { text: string; highlight: string 
 
 export default function AirportSearch() {
   const router = useRouter();
+  const { morph } = useLocalSearchParams<{ morph?: string }>();
+  const fromMorph = morph === '1';
+
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Airport | null>(null);
   const [homeOpen, setHomeOpen] = useState(false);
   const [prefs, setPrefs] = useState(getPreferences);
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<SectionList<Airport>>(null);
-  const enter = useRef(new Animated.Value(0)).current;
+
+  // Staged entrance: list → search field → home airport pill
+  const listEnter = useRef(new Animated.Value(fromMorph ? 0 : 1)).current;
+  const searchEnter = useRef(new Animated.Value(fromMorph ? 0 : 1)).current;
+  const headerEnter = useRef(new Animated.Value(fromMorph ? 0 : 1)).current;
 
   useEffect(() => subscribePreferences(() => setPrefs(getPreferences())), []);
 
   useEffect(() => {
-    Animated.timing(enter, {
-      toValue: 1,
-      duration: 340,
-      delay: 40,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
+    if (!fromMorph) {
+      const t = setTimeout(() => inputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
+    }
 
-    // Focus after the morph veil clears — avoids keyboard fighting the transition
-    const focusAt = setTimeout(() => inputRef.current?.focus(), 380);
+    const ease = Easing.out(Easing.cubic);
+
+    Animated.sequence([
+      Animated.delay(40),
+      Animated.parallel([
+        Animated.timing(listEnter, {
+          toValue: 1,
+          duration: 360,
+          easing: ease,
+          useNativeDriver: true,
+        }),
+        Animated.timing(searchEnter, {
+          toValue: 1,
+          duration: 320,
+          delay: 60,
+          easing: ease,
+          useNativeDriver: true,
+        }),
+        // Home airport pill arrives last — soft settle
+        Animated.timing(headerEnter, {
+          toValue: 1,
+          duration: 340,
+          delay: 200,
+          easing: ease,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+
+    const focusAt = setTimeout(() => inputRef.current?.focus(), 520);
     return () => clearTimeout(focusAt);
-  }, [enter]);
+  }, [fromMorph, listEnter, searchEnter, headerEnter]);
 
   const homeAirport = useMemo(() => {
     return (
@@ -124,21 +156,21 @@ export default function AirportSearch() {
     ? `${homeAirport.city}, ${homeAirport.country}`
     : prefs.homeAirport;
 
-  const contentStyle = {
-    opacity: enter,
-    transform: [
-      {
-        translateY: enter.interpolate({
-          inputRange: [0, 1],
-          outputRange: [10, 0],
-        }),
-      },
-    ],
-  };
-
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <Animated.View style={contentStyle}>
+      <Animated.View
+        style={{
+          opacity: headerEnter,
+          transform: [
+            {
+              translateY: headerEnter.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-6, 0],
+              }),
+            },
+          ],
+        }}
+      >
         <Row justify="space-between" style={styles.header}>
           <Pressable
             style={styles.locationPill}
@@ -173,7 +205,22 @@ export default function AirportSearch() {
         </View>
       )}
 
-      <Animated.View style={[styles.content, contentStyle]}>
+      <Animated.View
+        style={[
+          styles.content,
+          {
+            opacity: listEnter,
+            transform: [
+              {
+                translateY: listEnter.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [12, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
         {isSearching ? (
           <View style={styles.searchResults}>
             {searchResults.length > 0 ? (
@@ -248,7 +295,19 @@ export default function AirportSearch() {
         )}
       </Animated.View>
 
-      <Animated.View style={contentStyle}>
+      <Animated.View
+        style={{
+          opacity: searchEnter,
+          transform: [
+            {
+              translateY: searchEnter.interpolate({
+                inputRange: [0, 1],
+                outputRange: [10, 0],
+              }),
+            },
+          ],
+        }}
+      >
         <View style={styles.searchBar}>
           <Feather
             name="search"

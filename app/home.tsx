@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Dimensions,
   Animated,
+  Easing,
   LayoutAnimation,
   NativeSyntheticEvent,
   NativeScrollEvent,
@@ -15,10 +16,11 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
-import { palette, spacing, radii, shadows } from '../constants/tokens';
+import { palette, spacing, radii } from '../constants/tokens';
 import { LocationSheet } from '../components/LocationSheet';
 import { DestinationSheet } from '../components/DestinationSheet';
 import { PaxSheet } from '../components/PaxSheet';
+import { GlowingPaxButton } from '../components/GlowingPaxButton';
 import {
   SearchMorphOverlay,
   type SearchBarRect,
@@ -94,6 +96,7 @@ export default function Home() {
   const [morphing, setMorphing] = useState(false);
 
   const pinned = useRef(new Animated.Value(0)).current;
+  const homeFade = useRef(new Animated.Value(1)).current;
   const isPinned = useRef(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchBarRef = useRef<View>(null);
@@ -105,21 +108,29 @@ export default function Home() {
     searchBarRef.current?.measureInWindow((x, y, width, height) => {
       setMorphFrom({ x, y, width, height });
       setMorphing(true);
+      // Fade all home chrome first — no jarring expand over live content
+      Animated.timing(homeFade, {
+        toValue: 0,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
     });
-  }, []);
+  }, [homeFade]);
 
   const onMorphNavigate = useCallback(() => {
-    router.push('/airport-search');
+    router.push({ pathname: '/airport-search', params: { morph: '1' } });
   }, [router]);
 
   const onMorphFinished = useCallback(() => {
     setMorphing(false);
     setMorphFrom(null);
-    // Allow a fresh morph after the destination screen has settled
+    // Keep home faded while it sits under the stack; restore for back nav
     requestAnimationFrame(() => {
+      homeFade.setValue(1);
       morphLock.current = false;
     });
-  }, []);
+  }, [homeFade]);
 
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -156,111 +167,105 @@ export default function Home() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-      {/* ── Greeting ── */}
-      <View style={s.greeting}>
-        <Pressable style={s.profile} onPress={() => router.push('/account')}>
-          <View style={s.avatar}>
-            <Text variant="caption" style={{ color: palette.white, fontWeight: '700' }}>
-              RM
+      <Animated.View style={[s.fadeRoot, { opacity: homeFade }]}>
+        {/* ── Greeting ── */}
+        <View style={s.greeting}>
+          <Pressable style={s.profile} onPress={() => router.push('/account')}>
+            <View style={s.avatar}>
+              <Text variant="caption" style={{ color: palette.white, fontWeight: '700' }}>
+                RM
+              </Text>
+            </View>
+            <Text variant="bodySmall">Hello, Ramesh</Text>
+          </Pressable>
+
+          <View style={s.greetingRight}>
+            {/* Origin chip appears once the main pill scrolls away */}
+            <Animated.View
+              style={{ opacity: chipOpacity, transform: [{ translateY: chipShift }] }}
+              pointerEvents="box-none"
+            >
+              <Pressable style={s.originChip} onPress={() => setLocationOpen(true)}>
+                <Feather name="map-pin" size={12} color={palette.primary600} />
+                <Text variant="caption" style={{ color: palette.primary700, fontWeight: '600' }}>
+                  {origin.iata}
+                </Text>
+              </Pressable>
+            </Animated.View>
+
+            <Pressable
+              style={s.iconBtn}
+              onPress={() => showNotice('No new alerts')}
+            >
+              <Feather name="bell" size={18} color={palette.gray600} />
+            </Pressable>
+          </View>
+        </View>
+
+        {notice && (
+          <View style={s.notice}>
+            <Feather name="info" size={14} color={palette.gray600} />
+            <Text variant="caption" color="textSecondary" style={{ flex: 1 }}>
+              {notice}
             </Text>
           </View>
-          <Text variant="bodySmall">Hello, Ramesh</Text>
-        </Pressable>
+        )}
 
-        <View style={s.greetingRight}>
-          {/* Origin chip appears once the main pill scrolls away */}
-          <Animated.View
-            style={{ opacity: chipOpacity, transform: [{ translateY: chipShift }] }}
-            pointerEvents="box-none"
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          scrollEnabled={!morphing}
+        >
+          {/* ── Origin ── */}
+          <Pressable style={s.originPill} onPress={() => setLocationOpen(true)}>
+            <Feather name="map-pin" size={14} color={palette.primary600} />
+            <Text variant="bodySmall" color="textSecondary">
+              Flying from{' '}
+              <Text variant="bodySmall" style={{ fontWeight: '600', color: palette.gray900 }}>
+                {origin.city} ({origin.iata})
+              </Text>
+            </Text>
+            <Feather name="chevron-down" size={14} color={palette.gray500} />
+          </Pressable>
+
+          {/* ── Hero ── */}
+          <Text variant="display" align="center" style={s.hero}>
+            Where are you{'\n'}flying next?
+          </Text>
+
+          {/* Spacer keeps layout while the real pill is cloned into the overlay */}
+          <View
+            ref={searchBarRef}
+            collapsable={false}
+            style={[s.search, morphing && s.searchHidden]}
           >
-            <Pressable style={s.originChip} onPress={() => setLocationOpen(true)}>
-              <Feather name="map-pin" size={12} color={palette.primary600} />
-              <Text variant="caption" style={{ color: palette.primary700, fontWeight: '600' }}>
-                {origin.iata}
+            <GlowingPaxButton onPress={() => setPaxOpen(true)} />
+
+            <Pressable
+              style={s.searchField}
+              onPress={openAirportSearch}
+              accessibilityRole="button"
+              accessibilityLabel="Search airports"
+            >
+              <Feather name="search" size={18} color={palette.gray400} />
+              <Text variant="body" color="textTertiary" style={{ flex: 1 }}>
+                Where to next?
               </Text>
             </Pressable>
-          </Animated.View>
 
-          <Pressable
-            style={s.iconBtn}
-            onPress={() => showNotice('No new alerts')}
-          >
-            <Feather name="bell" size={18} color={palette.gray600} />
-          </Pressable>
-        </View>
-      </View>
-
-      {notice && (
-        <View style={s.notice}>
-          <Feather name="info" size={14} color={palette.gray600} />
-          <Text variant="caption" color="textSecondary" style={{ flex: 1 }}>
-            {notice}
-          </Text>
-        </View>
-      )}
-
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={s.scroll}
-        showsVerticalScrollIndicator={false}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-      >
-        {/* ── Origin ── */}
-        <Pressable style={s.originPill} onPress={() => setLocationOpen(true)}>
-          <Feather name="map-pin" size={14} color={palette.primary600} />
-          <Text variant="bodySmall" color="textSecondary">
-            Flying from{' '}
-            <Text variant="bodySmall" style={{ fontWeight: '600', color: palette.gray900 }}>
-              {origin.city} ({origin.iata})
-            </Text>
-          </Text>
-          <Feather name="chevron-down" size={14} color={palette.gray500} />
-        </Pressable>
-
-        {/* ── Hero ── */}
-        <Text variant="display" align="center" style={s.hero}>
-          Where are you{'\n'}flying next?
-        </Text>
-
-        {/* ── Search: passenger + field are separate targets ── */}
-        <View
-          ref={searchBarRef}
-          collapsable={false}
-          style={[s.search, morphing && s.searchHidden]}
-        >
-          <Pressable
-            style={s.searchPax}
-            onPress={() => setPaxOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Travellers"
-            hitSlop={4}
-          >
-            <Feather name="user" size={18} color={palette.primary500} />
-          </Pressable>
-
-          <Pressable
-            style={s.searchField}
-            onPress={openAirportSearch}
-            accessibilityRole="button"
-            accessibilityLabel="Search airports"
-          >
-            <Feather name="search" size={18} color={palette.gray400} />
-            <Text variant="body" color="textTertiary" style={{ flex: 1 }}>
-              Where to next?
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={s.searchGo}
-            onPress={openAirportSearch}
-            accessibilityRole="button"
-            accessibilityLabel="Go to airport search"
-            hitSlop={4}
-          >
-            <Feather name="arrow-right" size={18} color={palette.white} />
-          </Pressable>
-        </View>
+            <Pressable
+              style={s.searchGo}
+              onPress={openAirportSearch}
+              accessibilityRole="button"
+              accessibilityLabel="Go to airport search"
+              hitSlop={4}
+            >
+              <Feather name="arrow-right" size={18} color={palette.white} />
+            </Pressable>
+          </View>
 
         {/* ── Deals ── */}
         <View style={s.sectionHead}>
@@ -368,6 +373,7 @@ export default function Home() {
         <Tab icon="heart" label="Saved" onPress={() => showNotice('Saved arrives in a later release')} />
         <Tab icon="user" label="Account" onPress={() => router.push('/account')} />
       </View>
+      </Animated.View>
 
       {/* ── Sheets ── */}
       <LocationSheet
@@ -435,6 +441,7 @@ function Tab({
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: palette.white },
+  fadeRoot: { flex: 1 },
 
   // Greeting
   greeting: {
@@ -511,7 +518,7 @@ const s = StyleSheet.create({
 
   hero: { marginTop: spacing.lg, marginBottom: spacing.xl },
 
-  // Search — premium pill with two independent hit targets
+  // Search — soft float, passenger glow is on GlowingPaxButton
   search: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -519,30 +526,19 @@ const s = StyleSheet.create({
     backgroundColor: palette.white,
     borderRadius: radii.full,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: palette.gray200,
+    borderColor: 'rgba(0,0,0,0.06)',
     paddingLeft: 6,
     paddingRight: 6,
     paddingVertical: 6,
     minHeight: 58,
-    ...shadows.floating,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.055,
+    shadowRadius: 18,
+    elevation: 3,
   },
   searchHidden: {
     opacity: 0,
-  },
-  searchPax: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: palette.white,
-    borderWidth: 1.5,
-    borderColor: palette.primary200,
-    shadowColor: palette.primary500,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.22,
-    shadowRadius: 6,
-    elevation: 2,
   },
   searchField: {
     flex: 1,

@@ -11,7 +11,7 @@ import { Feather } from '@expo/vector-icons';
 import { Text } from './ui';
 import { palette, spacing, radii } from '../constants/tokens';
 
-const { width: SW, height: SH } = Dimensions.get('window');
+const { height: SH } = Dimensions.get('window');
 
 export type SearchBarRect = {
   x: number;
@@ -28,8 +28,9 @@ type Props = {
 };
 
 /**
- * Premium search-bar → airport-search morph.
- * Uses native-driver transforms + opacity only (no layout thrash / jitter).
+ * Home → airport-search handoff (window Modal for correct coords).
+ * Soft white veil (no radial expand) + pill drifts up, then instant navigate.
+ * Veil stays solid until unmount so home never flashes back.
  */
 export function SearchMorphOverlay({
   visible,
@@ -53,17 +54,17 @@ export function SearchMorphOverlay({
         navigated.current = true;
         onNavigate();
       }
-    }, 200);
+    }, 340);
 
     Animated.timing(progress, {
       toValue: 1,
-      duration: 520,
+      duration: 620,
       easing: Easing.bezier(0.22, 1, 0.36, 1),
       useNativeDriver: true,
     }).start(({ finished: ok }) => {
       if (ok && !finished.current) {
         finished.current = true;
-        onFinished();
+        setTimeout(onFinished, 60);
       }
     });
 
@@ -72,43 +73,31 @@ export function SearchMorphOverlay({
 
   if (!visible || !from) return null;
 
-  const cx = from.x + from.width / 2;
-  const cy = from.y + from.height / 2;
+  const exitY = -(from.y * 0.55 + 40);
 
-  // Expand a white disc from the pill center to cover the screen
-  const coverSize = Math.hypot(SW, SH) * 1.15;
-  const coverScale = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [Math.max(from.width, from.height) / coverSize, 1],
-  });
-
-  // Hold solid white through the stack fade, then dissolve to reveal
   const veilOpacity = progress.interpolate({
-    inputRange: [0, 0.22, 0.45, 0.72, 1],
-    outputRange: [0, 0.75, 1, 1, 0],
+    inputRange: [0, 0.3, 1],
+    outputRange: [0, 1, 1],
   });
 
-  const pillOpacity = progress.interpolate({
-    inputRange: [0, 0.2, 0.42],
-    outputRange: [1, 1, 0],
-  });
-
-  const pillLift = progress.interpolate({
-    inputRange: [0, 0.38],
-    outputRange: [0, -8],
-    extrapolate: 'clamp',
+  const pillY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, Math.min(exitY, -SH * 0.12)],
   });
 
   const pillScale = progress.interpolate({
-    inputRange: [0, 0.32, 0.5],
-    outputRange: [1, 1.04, 1.02],
-    extrapolate: 'clamp',
+    inputRange: [0, 1],
+    outputRange: [1, 0.92],
+  });
+
+  const pillOpacity = progress.interpolate({
+    inputRange: [0, 0.5, 0.78],
+    outputRange: [1, 0.75, 0],
   });
 
   const chromeOpacity = progress.interpolate({
-    inputRange: [0, 0.16, 0.36],
-    outputRange: [1, 0.5, 0],
-    extrapolate: 'clamp',
+    inputRange: [0, 0.35, 0.6],
+    outputRange: [1, 0.35, 0],
   });
 
   return (
@@ -119,24 +108,9 @@ export function SearchMorphOverlay({
       statusBarTranslucent
       onRequestClose={() => {}}
     >
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {/* Expanding white veil from pill center */}
-        <Animated.View
-          style={[
-            styles.cover,
-            {
-              left: cx - coverSize / 2,
-              top: cy - coverSize / 2,
-              width: coverSize,
-              height: coverSize,
-              borderRadius: coverSize / 2,
-              opacity: veilOpacity,
-              transform: [{ scale: coverScale }],
-            },
-          ]}
-        />
+      <View style={styles.root} pointerEvents="none">
+        <Animated.View style={[styles.veil, { opacity: veilOpacity }]} />
 
-        {/* Floating clone of the search pill */}
         <Animated.View
           style={[
             styles.pill,
@@ -146,11 +120,11 @@ export function SearchMorphOverlay({
               width: from.width,
               height: from.height,
               opacity: pillOpacity,
-              transform: [{ translateY: pillLift }, { scale: pillScale }],
+              transform: [{ translateY: pillY }, { scale: pillScale }],
             },
           ]}
         >
-          <Animated.View style={[styles.paxBtn, { opacity: chromeOpacity }]}>
+          <Animated.View style={[styles.paxGhost, { opacity: chromeOpacity }]}>
             <Feather name="user" size={18} color={palette.primary500} />
           </Animated.View>
 
@@ -171,8 +145,11 @@ export function SearchMorphOverlay({
 }
 
 const styles = StyleSheet.create({
-  cover: {
-    position: 'absolute',
+  root: {
+    flex: 1,
+  },
+  veil: {
+    ...StyleSheet.absoluteFill,
     backgroundColor: palette.white,
   },
   pill: {
@@ -182,30 +159,24 @@ const styles = StyleSheet.create({
     backgroundColor: palette.white,
     borderRadius: radii.full,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: palette.gray200,
+    borderColor: 'rgba(0,0,0,0.06)',
     paddingLeft: 6,
     paddingRight: 6,
     gap: spacing.xs,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 14,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 2,
   },
-  paxBtn: {
+  paxGhost: {
     width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: palette.white,
     borderWidth: 1.5,
     borderColor: palette.primary200,
-    shadowColor: palette.primary500,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.22,
-    shadowRadius: 6,
-    elevation: 2,
   },
   field: {
     flex: 1,
