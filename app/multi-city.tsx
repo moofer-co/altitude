@@ -15,7 +15,7 @@ import {
   DateSelectSheet,
 } from '../components/DateSelectSheet';
 import { formatShortDate } from '../components/DateSelectPicker';
-import { palette, spacing, radii, shadows } from '../constants/tokens';
+import { layout, palette, spacing, radii, shadows } from '../constants/tokens';
 import { airports, allAirports } from '../data/airports';
 import { getPreferences } from '../data/account';
 import type { Airport } from '../types';
@@ -318,7 +318,7 @@ export default function MultiCity() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: palette.white },
   header: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingVertical: spacing.sm,
   },
   badge: {
@@ -346,7 +346,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   scroll: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.md,
     paddingBottom: spacing.xl,
   },
@@ -412,7 +412,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
   },
   addLabel: {
     color: palette.primary600,
@@ -424,7 +424,7 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
   footer: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,

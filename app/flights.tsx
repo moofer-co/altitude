@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
-import { palette, spacing, radii, shadows } from '../constants/tokens';
+import { layout, palette, spacing, radii, shadows } from '../constants/tokens';
 import { mockFlights, dateStrip, type MockFlight } from '../data/flights';
 import { FlightCard } from '../components/FlightCard';
 import { FareSheet } from '../components/FareSheet';
@@ -41,7 +41,7 @@ import {
 } from '../lib/flightRules';
 
 const { width: SW } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
 /** Fewer chips on screen; the rest scroll week by week. */
 const DATES_VISIBLE = 5;

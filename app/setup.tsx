@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text, Button, Input } from '../components/ui';
 import { AirportSearchSheet } from '../components/AirportSearchSheet';
-import { palette, spacing, radii } from '../constants/tokens';
+import { layout, palette, spacing, radii } from '../constants/tokens';
 import { airports, allAirports } from '../data/airports';
 import { updatePreferences, getPreferences } from '../data/account';
 import { markSetupComplete, getSession } from '../lib/auth';
@@ -397,14 +397,14 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: palette.white },
   topBar: {
     alignItems: 'flex-end',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.xs,
   },
   skip: { paddingVertical: spacing.sm },
   progress: {
     flexDirection: 'row',
     gap: 6,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingBottom: spacing.md,
   },
   dot: {
@@ -415,7 +415,7 @@ const s = StyleSheet.create({
   },
   dotOn: { backgroundColor: palette.primary500 },
   scroll: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingBottom: spacing.xl,
     flexGrow: 1,
   },

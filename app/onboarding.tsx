@@ -10,7 +10,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from '../components/ui';
 import { OnboardingOrbit } from '../components/OnboardingOrbit';
-import { palette, spacing } from '../constants/tokens';
+import { layout, palette, spacing } from '../constants/tokens';
 
 const { width: SW } = Dimensions.get('window');
 const ORBIT = Math.min(SW * 0.82, 340);
@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
   },
   illustration: {
     flex: 1.15,

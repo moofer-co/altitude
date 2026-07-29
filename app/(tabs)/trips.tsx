@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, Plane } from '../../components/ui';
 import { TabScreenEnter } from '../../components/TabScreenEnter';
-import { palette, spacing, radii, shadows } from '../../constants/tokens';
+import { layout, palette, spacing, radii, shadows } from '../../constants/tokens';
 import {
   allTrips,
   groupTrips,
@@ -24,7 +24,7 @@ import {
   type Trip,
 } from '../../data/trip';
 
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
 const URGENCY = {
   now: { bg: palette.primary500, fg: palette.white, sub: 'rgba(255,255,255,0.85)' },

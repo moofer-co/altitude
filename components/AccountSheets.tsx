@@ -10,7 +10,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
 import { PickerSheet } from './PickerSheet';
-import { palette, spacing, radii, typography } from '../constants/tokens';
+import { layout, palette, spacing, radii, typography } from '../constants/tokens';
 import { NATIONALITIES } from '../data/trip';
 import {
   validateProfile,
@@ -1219,7 +1219,7 @@ export function SignOutSheet({
 
 const s = StyleSheet.create({
   body: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
   },
@@ -1319,7 +1319,7 @@ const s = StyleSheet.create({
   },
 
   filterBar: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingVertical: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: palette.gray200,
@@ -1334,7 +1334,7 @@ const s = StyleSheet.create({
   chipOn: { backgroundColor: palette.primary50 },
 
   spendTotal: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingVertical: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: palette.gray200,

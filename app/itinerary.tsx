@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, Plane } from '../components/ui';
-import { palette, spacing, radii, shadows } from '../constants/tokens';
+import { layout, palette, spacing, radii, shadows } from '../constants/tokens';
 import {
   CheckInSheet,
   BoardingPassSheet,
@@ -63,7 +63,7 @@ import {
 } from '../data/trip';
 import { allTrips } from '../data/trips';
 
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
 function tripForPnr(pnr: string | undefined): Trip {
   if (!pnr) return initialTrip;

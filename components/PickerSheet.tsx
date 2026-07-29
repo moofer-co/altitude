@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { View, ScrollView, TextInput, Pressable, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
-import { palette, spacing, radii, typography } from '../constants/tokens';
+import { layout, palette, spacing, radii, typography } from '../constants/tokens';
 
 /**
  * A dedicated sheet for choosing one value from a list. Dropdowns nested
@@ -101,7 +101,7 @@ export function PickerSheet({
 
 const s = StyleSheet.create({
   searchWrap: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
   },
@@ -116,7 +116,7 @@ const s = StyleSheet.create({
   },
   searchInput: { ...typography.body, flex: 1, color: palette.gray900 },
 
-  list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
+  list: { paddingHorizontal: layout.screenPadding, paddingBottom: spacing.xl },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

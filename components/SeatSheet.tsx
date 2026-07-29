@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { View, ScrollView, Pressable, StyleSheet, Dimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
-import { palette, spacing, radii } from '../constants/tokens';
+import { layout, palette, spacing, radii } from '../constants/tokens';
 import {
   SEAT_ROWS,
   SEAT_LETTERS,
@@ -13,7 +13,7 @@ import {
 } from '../data/booking';
 
 const { width: SW } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
 const SEAT = 38;
 const GAP = 5;

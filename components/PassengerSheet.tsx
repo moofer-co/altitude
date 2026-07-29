@@ -3,7 +3,7 @@ import { View, ScrollView, TextInput, Pressable, StyleSheet } from 'react-native
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
 import { PickerSheet } from './PickerSheet';
-import { palette, spacing, radii, typography } from '../constants/tokens';
+import { layout, palette, spacing, radii, typography } from '../constants/tokens';
 import {
   validatePassenger,
   PASSENGER_LABEL,
@@ -411,7 +411,7 @@ function Label({ text, error }: { text: string; error?: string }) {
 }
 
 const s = StyleSheet.create({
-  body: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
+  body: { paddingHorizontal: layout.screenPadding, paddingTop: spacing.lg, paddingBottom: spacing.xl },
 
   alert: {
     flexDirection: 'row',

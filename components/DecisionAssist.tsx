@@ -13,7 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from './ui';
-import { palette, spacing, radii, shadows } from '../constants/tokens';
+import { layout, palette, spacing, radii, shadows } from '../constants/tokens';
 import type { MockFlight } from '../data/flights';
 import type { Band } from '../lib/flightAnalysis';
 import {
@@ -24,7 +24,7 @@ import {
 } from '../lib/decisionAssist';
 
 const { height: SH } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 const SHEET_H = SH * 0.82;
 const DISMISS_AT = SHEET_H * 0.38;
 
@@ -756,7 +756,7 @@ const sh = StyleSheet.create({
   },
   apply: {
     backgroundColor: palette.primary500,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingVertical: 13,
     borderRadius: radii.full,
   },

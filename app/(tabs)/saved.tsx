@@ -15,7 +15,7 @@ import { Feather } from '@expo/vector-icons';
 import { Text, Button } from '../../components/ui';
 import { TabScreenEnter } from '../../components/TabScreenEnter';
 import { DestinationSheet } from '../../components/DestinationSheet';
-import { palette, spacing, radii } from '../../constants/tokens';
+import { layout, palette, spacing, radii } from '../../constants/tokens';
 import {
   favoriteDestinations,
   subscribeFavorites,
@@ -26,7 +26,7 @@ import {
 import { formatFlightTime, type Destination } from '../../data/destinations';
 import { getPreferences } from '../../data/account';
 
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
 type SortKey = 'recent' | 'price' | 'name';
 
@@ -345,7 +345,7 @@ const s = StyleSheet.create({
     flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingVertical: spacing.xxl,
   },
   emptyIcon: {

@@ -2,7 +2,7 @@ import { View, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, ListRow, Divider } from '../components/ui';
-import { colors, spacing, palette } from '../constants/tokens';
+import { layout, colors, spacing, palette } from '../constants/tokens';
 
 const screens = [
   { route: '/onboarding', label: 'Onboarding', status: 'built' },
@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   scroll: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
   },
   header: {
     paddingTop: spacing.xl,

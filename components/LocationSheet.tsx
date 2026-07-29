@@ -13,7 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from './ui';
-import { palette, spacing, radii, shadows } from '../constants/tokens';
+import { layout, palette, spacing, radii, shadows } from '../constants/tokens';
 import {
   nearbyAirports,
   recentOrigins,
@@ -21,7 +21,7 @@ import {
 } from '../data/destinations';
 
 const { height: SH } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 const SHEET_H = SH * 0.78;
 const DISMISS_AT = SHEET_H * 0.3;
 

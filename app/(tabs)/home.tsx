@@ -16,7 +16,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../../components/ui';
-import { palette, spacing, radii } from '../../constants/tokens';
+import { layout, palette, spacing, radii } from '../../constants/tokens';
 import { LocationSheet } from '../../components/LocationSheet';
 import { DestinationSheet } from '../../components/DestinationSheet';
 import { PaxSheet } from '../../components/PaxSheet';
@@ -39,7 +39,7 @@ import {
 import { homeWeather } from '../../data/weather';
 
 const { width: SW } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 const GRID_GAP = 12;
 const CARD_W = (SW - HPAD * 2 - GRID_GAP) / 2;
 const DEAL_W = 168;

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
-import { palette, spacing, radii } from '../constants/tokens';
+import { layout, palette, spacing, radii } from '../constants/tokens';
 import type { MockFlight } from '../data/flights';
 import { BAND_LABEL, BAND_RANGE, getBand, type Band } from './../lib/flightAnalysis';
 
@@ -318,7 +318,7 @@ function Toggle({
 }
 
 const s = StyleSheet.create({
-  body: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
+  body: { paddingHorizontal: layout.screenPadding, paddingTop: spacing.lg, paddingBottom: spacing.xl },
 
   group: { marginBottom: spacing.xl },
   groupTitle: { letterSpacing: 1, marginBottom: spacing.md },
@@ -377,7 +377,7 @@ const s = StyleSheet.create({
   footer: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   reset: {
     minHeight: 52,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     borderRadius: radii.full,
     borderWidth: 1,
     borderColor: palette.gray200,

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
-import { palette, radii, spacing } from '../constants/tokens';
+import { layout, palette, radii, spacing } from '../constants/tokens';
 
 export type PageSkeletonVariant =
   | 'explore'
@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
   },
   pad: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.sm,
   },
   row: {

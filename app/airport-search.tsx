@@ -17,7 +17,7 @@ import { AirportSearchSheet } from '../components/AirportSearchSheet';
 import { KeyboardBottomPad } from '../components/KeyboardBottomPad';
 import { PageEnter } from '../components/TabScreenEnter';
 import { SCRUBBER_SLOT_W } from '../components/AlphabetScrubber';
-import { palette, spacing, radii, typography } from '../constants/tokens';
+import { layout, palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports, airports } from '../data/airports';
 import {
   getPreferences,
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
   },
 
   header: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingVertical: spacing.sm,
   },
   locationPill: {
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
 
   selectedBanner: {
     backgroundColor: palette.primary500,
-    marginHorizontal: spacing.lg,
+    marginHorizontal: layout.screenPadding,
     marginTop: spacing.xs,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -341,7 +341,7 @@ const styles = StyleSheet.create({
   searchResultsContent: {
     flexGrow: 1,
     justifyContent: 'flex-end',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingBottom: spacing.md,
   },
   didYouMean: {
@@ -379,7 +379,7 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
     backgroundColor: palette.white,

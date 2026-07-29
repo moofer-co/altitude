@@ -12,11 +12,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from './Text';
-import { palette, spacing, radii, shadows } from '../../constants/tokens';
+import { layout, palette, spacing, radii, shadows } from '../../constants/tokens';
 import { useKeyboardLift } from '../../hooks/useKeyboardLift';
 
 const { height: SH } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
 /**
  * Bottom sheet with drag-to-dismiss.

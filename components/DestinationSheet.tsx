@@ -13,7 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from './ui';
-import { palette, spacing, radii, shadows } from '../constants/tokens';
+import { layout, palette, spacing, radii, shadows } from '../constants/tokens';
 import {
   formatFlightTime,
   cheapestMonth,
@@ -25,7 +25,7 @@ import { WeatherIcon } from './WeatherIcon';
 import { weatherFor } from '../data/weather';
 
 const { width: SW, height: SH } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 const CONTENT_W = SW - HPAD * 2;
 
 const SHEET_H = SH * 0.9;

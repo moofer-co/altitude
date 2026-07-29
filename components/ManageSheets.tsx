@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { View, ScrollView, TextInput, Pressable, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
-import { palette, spacing, radii, typography } from '../constants/tokens';
+import { layout, palette, spacing, radii, typography } from '../constants/tokens';
 import {
   refundQuote,
   dateChangeOptions,
@@ -424,7 +424,7 @@ function Line({
 }
 
 const s = StyleSheet.create({
-  body: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
+  body: { paddingHorizontal: layout.screenPadding, paddingTop: spacing.lg, paddingBottom: spacing.xl },
   label: { letterSpacing: 1, marginBottom: spacing.sm, marginTop: spacing.md },
 
   notice: {
@@ -529,7 +529,7 @@ const s = StyleSheet.create({
   },
   ghost: {
     minHeight: 52,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     borderRadius: radii.full,
     borderWidth: 1,
     borderColor: palette.gray200,
@@ -540,7 +540,7 @@ const s = StyleSheet.create({
   total: { fontSize: 21, fontWeight: '700', color: palette.gray900, lineHeight: 26 },
   cta: {
     minHeight: 52,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     backgroundColor: palette.primary500,
     borderRadius: radii.full,
     alignItems: 'center',

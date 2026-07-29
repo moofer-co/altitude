@@ -126,7 +126,7 @@ These are what components reference (not raw palette hex):
 | xs | 4 | Tight gaps inside components |
 | sm | 8 | Inner gaps, list item spacing |
 | md | 16 | Component padding, card gaps |
-| lg | 24 | Screen horizontal padding, component gaps |
+| lg | 24 | Component gaps, control padding |
 | xl | 32 | Section spacing |
 | xxl | 48 | Bottom safe zone |
 
@@ -134,7 +134,7 @@ These are what components reference (not raw palette hex):
 
 | Token | Value |
 |-------|------:|
-| Screen horizontal padding | 24 |
+| Screen horizontal padding | 16 |
 | Section gap | 32 |
 | Component gap | 24 |
 | Card gap | 16 |

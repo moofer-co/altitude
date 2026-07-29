@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text, Button, Input } from '../components/ui';
 import { AuthOptions } from '../components/AuthOptions';
-import { palette, spacing, radii } from '../constants/tokens';
+import { layout, palette, spacing, radii } from '../constants/tokens';
 import {
   signInWithEmail,
   signInWithProvider,
@@ -191,7 +191,7 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: palette.white },
   scroll: {
     flexGrow: 1,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingBottom: spacing.xl,
   },
   back: {

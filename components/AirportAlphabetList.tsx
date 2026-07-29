@@ -10,7 +10,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { Text } from './ui';
 import { AlphabetScrubber, SCRUBBER_SLOT_W } from './AlphabetScrubber';
-import { palette, spacing, radii } from '../constants/tokens';
+import { layout, palette, spacing, radii } from '../constants/tokens';
 import { groupAirportsByLetter } from '../lib/airportSearch';
 import type { Airport } from '../types';
 
@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingBottom: spacing.md,
     paddingRight: SCRUBBER_SLOT_W,
   },

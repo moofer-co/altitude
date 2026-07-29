@@ -11,7 +11,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
-import { palette, spacing, radii, typography, shadows } from '../constants/tokens';
+import { layout, palette, spacing, radii, typography, shadows } from '../constants/tokens';
 import { PassengerSheet } from '../components/PassengerSheet';
 import { ExtrasSheet, type ExtraKind } from '../components/ExtrasSheet';
 import { SeatSheet } from '../components/SeatSheet';
@@ -44,7 +44,7 @@ import {
   type RedemptionOption,
 } from '../data/loyalty';
 
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 const BASE_FARE = 4250;
 
 const INTERNATIONAL = false;

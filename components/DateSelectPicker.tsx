@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Button, Row } from './ui';
-import { palette, spacing, radii } from '../constants/tokens';
+import { layout, palette, spacing, radii } from '../constants/tokens';
 import {
   fareData,
   getCheapestDates,
@@ -21,7 +21,7 @@ import {
 } from '../data/prices';
 
 const { width: SW } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 const CONTENT_W = SW - HPAD * 2;
 
 const HIST_H = 64;

@@ -9,7 +9,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet, Plane } from './ui';
 import { PickerSheet } from './PickerSheet';
-import { palette, spacing, radii } from '../constants/tokens';
+import { layout, palette, spacing, radii } from '../constants/tokens';
 import {
   timeOf,
   dateOf,
@@ -24,7 +24,7 @@ import {
   type TravelDocument,
 } from '../data/trip';
 
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
 type Step = 'select' | 'documents' | 'declare' | 'done';
 

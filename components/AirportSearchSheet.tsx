@@ -12,7 +12,7 @@ import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
 import { AirportAlphabetList } from './AirportAlphabetList';
 import { SCRUBBER_SLOT_W } from './AlphabetScrubber';
-import { palette, spacing, radii, typography } from '../constants/tokens';
+import { layout, palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports } from '../data/airports';
 import { searchAirports } from '../lib/airportSearch';
 import type { Airport } from '../types';
@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
   },
   searchResults: { flex: 1 },
   searchResultsContent: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.md,
     paddingBottom: spacing.md,
   },
@@ -237,7 +237,7 @@ const styles = StyleSheet.create({
   },
 
   searchBarWrap: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.sm,
     backgroundColor: palette.white,
   },

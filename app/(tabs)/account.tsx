@@ -17,7 +17,7 @@ import {
   SignOutSheet,
 } from '../../components/AccountSheets';
 import { LoyaltySheet, LoyaltySummary } from '../../components/LoyaltySheets';
-import { palette, spacing, radii } from '../../constants/tokens';
+import { layout, palette, spacing, radii } from '../../constants/tokens';
 import { useNow } from '../../data/trip';
 import { airports } from '../../data/airports';
 import {
@@ -51,7 +51,7 @@ import {
   type LinkedLoyalty,
 } from '../../data/loyalty';
 
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
 type SheetKind =
   | 'profile'
