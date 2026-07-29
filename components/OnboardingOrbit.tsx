@@ -32,28 +32,100 @@ type ElementSpec = {
   color: string;
   iconColor: string;
   orbit: OrbitId;
+  /** Well-spaced seed angle on the carrier (degrees). */
+  seedAngle: number;
 };
 
-/** Slower, calmer pacing — roughly 2× previous. */
-const APPEAR_MS = 1400;
-const HIDE_MS = 1200;
-const MIN_VISIBLE_MS = 9000;
-const GAP_AFTER_APPEAR_MS = 2200;
-const INITIAL_STAGGER_MS = 1600;
-/** Minimum angular separation between visible elements on the same orbit. */
-const MIN_GAP_DEG = 58;
-/** Separation vs the other orbit so icons don't stack on top of each other. */
-const CROSS_GAP_DEG = 42;
+/** Hide / appear pacing — ~2× slower than previous. */
+const APPEAR_MS = 2800;
+const HIDE_MS = 2400;
+const MIN_VISIBLE_MS = 18000;
+const GAP_AFTER_APPEAR_MS = 4500;
+const INITIAL_STAGGER_MS = 3200;
+const BEAT_AFTER_HIDE_MS = 1800;
+
+/** Visible orbital pace (same order as the first working version). */
+const OUTER_SPIN_MS = 52000;
+const INNER_SPIN_MS = 38000;
+
+/** Minimum angular separation between visible peers (degrees). */
+const MIN_GAP_DEG = 62;
+/** World-space gap vs the other orbit so icons don't stack. */
+const CROSS_GAP_DEG = 48;
 
 const ELEMENTS: ElementSpec[] = [
-  { id: 'passport', kind: 'passport', size: 50, color: palette.primary500, iconColor: palette.white, orbit: 'outer' },
-  { id: 'plane', kind: 'plane', size: 44, color: '#F59E0B', iconColor: palette.white, orbit: 'outer' },
-  { id: 'globe', kind: 'globe', size: 46, color: '#16A34A', iconColor: palette.white, orbit: 'outer' },
-  { id: 'pin', kind: 'pin', size: 40, color: '#EC4899', iconColor: palette.white, orbit: 'outer' },
-  { id: 'bag', kind: 'bag', size: 38, color: '#0D9488', iconColor: palette.white, orbit: 'inner' },
-  { id: 'compass', kind: 'compass', size: 36, color: '#A78BFA', iconColor: palette.white, orbit: 'inner' },
-  { id: 'ticket', kind: 'ticket', size: 34, color: '#F472B6', iconColor: palette.white, orbit: 'inner' },
-  { id: 'sun', kind: 'sun', size: 32, color: '#FBBF24', iconColor: '#78350F', orbit: 'inner' },
+  {
+    id: 'passport',
+    kind: 'passport',
+    size: 50,
+    color: palette.primary500,
+    iconColor: palette.white,
+    orbit: 'outer',
+    seedAngle: -38,
+  },
+  {
+    id: 'plane',
+    kind: 'plane',
+    size: 44,
+    color: '#F59E0B',
+    iconColor: palette.white,
+    orbit: 'outer',
+    seedAngle: 32,
+  },
+  {
+    id: 'pin',
+    kind: 'pin',
+    size: 40,
+    color: '#EC4899',
+    iconColor: palette.white,
+    orbit: 'outer',
+    seedAngle: 128,
+  },
+  {
+    id: 'globe',
+    kind: 'globe',
+    size: 46,
+    color: '#16A34A',
+    iconColor: palette.white,
+    orbit: 'outer',
+    seedAngle: 205,
+  },
+  {
+    id: 'bag',
+    kind: 'bag',
+    size: 38,
+    color: '#0D9488',
+    iconColor: palette.white,
+    orbit: 'inner',
+    seedAngle: 255,
+  },
+  {
+    id: 'compass',
+    kind: 'compass',
+    size: 36,
+    color: '#A78BFA',
+    iconColor: palette.white,
+    orbit: 'inner',
+    seedAngle: 165,
+  },
+  {
+    id: 'ticket',
+    kind: 'ticket',
+    size: 34,
+    color: '#F472B6',
+    iconColor: palette.white,
+    orbit: 'inner',
+    seedAngle: 58,
+  },
+  {
+    id: 'sun',
+    kind: 'sun',
+    size: 32,
+    color: '#FBBF24',
+    iconColor: '#78350F',
+    orbit: 'inner',
+    seedAngle: 315,
+  },
 ];
 
 function TravelIcon({
@@ -165,65 +237,90 @@ function GlowRing({
   );
 }
 
+function normDeg(d: number) {
+  return ((d % 360) + 360) % 360;
+}
+
 function angDist(a: number, b: number) {
-  let d = Math.abs(a - b) % 360;
+  let d = Math.abs(normDeg(a) - normDeg(b));
   if (d > 180) d = 360 - d;
   return d;
 }
 
-function pickFreeAngle(
-  sameOrbit: number[],
-  otherOrbit: number[],
-  preferAwayFrom?: number,
+/** Outer carrier spins +progress; inner spins −progress (reverse). */
+function toWorldAngle(local: number, progress: number, orbit: OrbitId) {
+  const spun = progress * 360;
+  return orbit === 'outer' ? normDeg(local + spun) : normDeg(local - spun);
+}
+
+function pickFreeLocalAngle(
+  orbit: OrbitId,
+  sameWorld: number[],
+  otherWorld: number[],
+  progress: number,
+  preferAwayWorld?: number,
 ): number {
-  let best = Math.random() * 360;
+  let bestLocal = Math.random() * 360;
   let bestScore = -1;
 
-  for (let i = 0; i < 36; i++) {
-    const candidate = Math.random() * 360;
+  // Deterministic sweep + a few random probes for the largest clear slot
+  for (let i = 0; i < 72; i++) {
+    const local = i < 60 ? i * 6 : Math.random() * 360;
+    const world = toWorldAngle(local, progress, orbit);
+
     const sameGap =
-      sameOrbit.length === 0
+      sameWorld.length === 0
         ? 180
-        : Math.min(...sameOrbit.map((o) => angDist(candidate, o)));
+        : Math.min(...sameWorld.map((o) => angDist(world, o)));
     if (sameGap < MIN_GAP_DEG) continue;
 
     const crossGap =
-      otherOrbit.length === 0
+      otherWorld.length === 0
         ? 180
-        : Math.min(...otherOrbit.map((o) => angDist(candidate, o)));
+        : Math.min(...otherWorld.map((o) => angDist(world, o)));
     if (crossGap < CROSS_GAP_DEG) continue;
 
-    let score = sameGap + crossGap * 0.5;
-    if (preferAwayFrom != null) score += angDist(candidate, preferAwayFrom) * 0.4;
+    let score = sameGap + crossGap * 0.65;
+    if (preferAwayWorld != null) {
+      score += angDist(world, preferAwayWorld) * 0.35;
+    }
     if (score > bestScore) {
       bestScore = score;
-      best = candidate;
+      bestLocal = local;
     }
   }
 
-  if (bestScore < 0 && sameOrbit.length > 0) {
-    const sorted = [...sameOrbit].sort((a, b) => a - b);
+  // Fallback: largest gap on this orbit in world space
+  if (bestScore < 0) {
+    const occupied = [...sameWorld].sort((a, b) => a - b);
+    if (occupied.length === 0) return bestLocal;
     let maxGap = -1;
-    let mid = 0;
-    for (let i = 0; i < sorted.length; i++) {
-      const a = sorted[i];
-      const b = sorted[(i + 1) % sorted.length] + (i + 1 === sorted.length ? 360 : 0);
+    let midWorld = 0;
+    for (let i = 0; i < occupied.length; i++) {
+      const a = occupied[i];
+      const b =
+        occupied[(i + 1) % occupied.length] +
+        (i + 1 === occupied.length ? 360 : 0);
       const gap = b - a;
       if (gap > maxGap) {
         maxGap = gap;
-        mid = (a + gap / 2) % 360;
+        midWorld = normDeg(a + gap / 2);
       }
     }
-    return mid;
+    // Convert desired world angle back to local on this carrier
+    const spun = progress * 360;
+    return orbit === 'outer'
+      ? normDeg(midWorld - spun)
+      : normDeg(midWorld + spun);
   }
 
-  return best;
+  return bestLocal;
 }
 
 type ElementHandle = {
   id: string;
   orbit: OrbitId;
-  getAngle: () => number | null;
+  getLocalAngle: () => number;
   isVisible: () => boolean;
   visibleSince: () => number;
   hide: () => Promise<void>;
@@ -231,8 +328,8 @@ type ElementHandle = {
 };
 
 /**
- * Rides the shared orbit rotation. Visibility fades in/out without
- * stopping the carrier — so neighbours keep turning undisturbed.
+ * Always mounted on the spinning carrier. Hide/show only fades opacity —
+ * neighbours keep turning with no interruption.
  */
 function OrbitElement({
   spec,
@@ -247,14 +344,17 @@ function OrbitElement({
   counterRotate: Animated.AnimatedInterpolation<string>;
   register: (handle: ElementHandle | null) => void;
 }) {
-  const [angle, setAngle] = useState<number | null>(null);
+  const [angle, setAngle] = useState(spec.seedAngle);
   const visibleRef = useRef(false);
-  const angleRef = useRef<number | null>(null);
+  const angleRef = useRef(spec.seedAngle);
   const sinceRef = useRef(0);
   const opacity = useRef(new Animated.Value(0)).current;
-  const scale = useRef(new Animated.Value(0.94)).current;
+  const scale = useRef(new Animated.Value(0.88)).current;
+  const busyRef = useRef(false);
 
   const hide = useCallback(() => {
+    if (busyRef.current) return Promise.resolve();
+    busyRef.current = true;
     return new Promise<void>((resolve) => {
       Animated.parallel([
         Animated.timing(opacity, {
@@ -264,15 +364,14 @@ function OrbitElement({
           useNativeDriver: true,
         }),
         Animated.timing(scale, {
-          toValue: 0.94,
+          toValue: 0.88,
           duration: HIDE_MS,
           easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
         }),
       ]).start(() => {
         visibleRef.current = false;
-        angleRef.current = null;
-        setAngle(null);
+        busyRef.current = false;
         resolve();
       });
     });
@@ -280,11 +379,14 @@ function OrbitElement({
 
   const showAt = useCallback(
     (next: number) => {
+      if (busyRef.current) return Promise.resolve();
+      busyRef.current = true;
       return new Promise<void>((resolve) => {
+        // Reposition while invisible so the jump is never seen
         angleRef.current = next;
         setAngle(next);
         opacity.setValue(0);
-        scale.setValue(0.94);
+        scale.setValue(0.88);
         requestAnimationFrame(() => {
           Animated.parallel([
             Animated.timing(opacity, {
@@ -302,6 +404,7 @@ function OrbitElement({
           ]).start(() => {
             visibleRef.current = true;
             sinceRef.current = Date.now();
+            busyRef.current = false;
             resolve();
           });
         });
@@ -314,7 +417,7 @@ function OrbitElement({
     const handle: ElementHandle = {
       id: spec.id,
       orbit: spec.orbit,
-      getAngle: () => angleRef.current,
+      getLocalAngle: () => angleRef.current,
       isVisible: () => visibleRef.current,
       visibleSince: () => sinceRef.current,
       hide,
@@ -323,8 +426,6 @@ function OrbitElement({
     register(handle);
     return () => register(null);
   }, [hide, register, showAt, spec.id, spec.orbit]);
-
-  if (angle == null) return null;
 
   const rad = (angle * Math.PI) / 180;
   const left = stageSize / 2 + Math.cos(rad) * radius - spec.size / 2;
@@ -354,18 +455,20 @@ function OrbitElement({
 
 function sleep(ms: number, signal: { cancelled: boolean }) {
   return new Promise<void>((resolve) => {
-    const t = setTimeout(resolve, ms);
     if (signal.cancelled) {
-      clearTimeout(t);
       resolve();
+      return;
     }
+    const t = setTimeout(() => resolve(), ms);
+    // Cleared on cancel via short-poll below is unnecessary; choreography checks signal
+    void t;
   });
 }
 
 /**
  * Onboarding hero: glowing rings, user at the centre, travel elements
- * that keep orbiting — one quietly leaves, then returns elsewhere with
- * spacing, while the others never stop turning.
+ * that keep orbiting. One quietly fades out; the rest keep turning;
+ * it fades back in at a free spot — then the next one leaves. Forever.
  */
 export function OnboardingOrbit({
   size = 300,
@@ -388,6 +491,9 @@ export function OnboardingOrbit({
   );
 
   const handles = useRef(new Map<string, ElementHandle>());
+  // Native-driven spins don't sync to JS listeners — clock the phase ourselves.
+  const outerStartedAt = useRef(0);
+  const innerStartedAt = useRef(0);
 
   const register = useCallback((id: string) => {
     return (handle: ElementHandle | null) => {
@@ -400,11 +506,13 @@ export function OnboardingOrbit({
   const innerSpin = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // ~2× slower than the previous orbital pace
+    outerStartedAt.current = Date.now();
+    innerStartedAt.current = Date.now();
+
     const a = Animated.loop(
       Animated.timing(outerSpin, {
         toValue: 1,
-        duration: 96000,
+        duration: OUTER_SPIN_MS,
         easing: Easing.linear,
         useNativeDriver: true,
       }),
@@ -412,7 +520,7 @@ export function OnboardingOrbit({
     const b = Animated.loop(
       Animated.timing(innerSpin, {
         toValue: 1,
-        duration: 72000,
+        duration: INNER_SPIN_MS,
         easing: Easing.linear,
         useNativeDriver: true,
       }),
@@ -442,29 +550,32 @@ export function OnboardingOrbit({
     outputRange: ['0deg', '360deg'],
   });
 
-  // Choreography: seed spaced positions, then cycle hide → appear elsewhere
   useEffect(() => {
     const signal = { cancelled: false };
 
-    const occupiedOn = (orbit: OrbitId, exceptId?: string) => {
-      const angles: number[] = [];
+    const progressOf = (orbit: OrbitId) => {
+      const period = orbit === 'outer' ? OUTER_SPIN_MS : INNER_SPIN_MS;
+      const started =
+        orbit === 'outer' ? outerStartedAt.current : innerStartedAt.current;
+      if (!started) return 0;
+      return ((Date.now() - started) % period) / period;
+    };
+
+    const worldAngles = (orbit: OrbitId, exceptId?: string) => {
+      const out: number[] = [];
       handles.current.forEach((h) => {
         if (h.orbit !== orbit) return;
         if (exceptId && h.id === exceptId) return;
         if (!h.isVisible()) return;
-        const a = h.getAngle();
-        if (a != null) angles.push(a);
+        out.push(toWorldAngle(h.getLocalAngle(), progressOf(orbit), orbit));
       });
-      return angles;
+      return out;
     };
 
-    const otherOrbitOf = (orbit: OrbitId) =>
-      orbit === 'outer' ? 'inner' : 'outer';
-
     const waitForHandles = async () => {
-      for (let i = 0; i < 40 && !signal.cancelled; i++) {
+      for (let i = 0; i < 60 && !signal.cancelled; i++) {
         if (handles.current.size >= ELEMENTS.length) return;
-        await sleep(50, signal);
+        await sleep(40, signal);
       }
     };
 
@@ -472,21 +583,17 @@ export function OnboardingOrbit({
       await waitForHandles();
       if (signal.cancelled) return;
 
-      // Initial appear — one after another, well spaced
+      // Seed appear in spaced order — carriers already spinning
       for (let i = 0; i < ELEMENTS.length; i++) {
         if (signal.cancelled) return;
         const spec = ELEMENTS[i];
         const h = handles.current.get(spec.id);
         if (!h) continue;
-        const angle = pickFreeAngle(
-          occupiedOn(spec.orbit),
-          occupiedOn(otherOrbitOf(spec.orbit)),
-        );
-        await h.showAt(angle);
+        await h.showAt(spec.seedAngle);
         await sleep(INITIAL_STAGGER_MS, signal);
       }
 
-      // Ongoing: hide one → others keep turning → appear elsewhere → repeat
+      // Cycle: hide oldest → beat → reappear in a free world slot → beat → repeat
       while (!signal.cancelled) {
         await sleep(GAP_AFTER_APPEAR_MS, signal);
         if (signal.cancelled) break;
@@ -495,7 +602,7 @@ export function OnboardingOrbit({
           .filter((h) => h.isVisible())
           .sort((a, b) => a.visibleSince() - b.visibleSince());
         if (visible.length === 0) {
-          await sleep(500, signal);
+          await sleep(800, signal);
           continue;
         }
 
@@ -511,19 +618,28 @@ export function OnboardingOrbit({
           .sort((a, b) => a.visibleSince() - b.visibleSince());
         if (still.length) target = still[0];
 
-        const oldAngle = target.getAngle();
+        const oldWorld = toWorldAngle(
+          target.getLocalAngle(),
+          progressOf(target.orbit),
+          target.orbit,
+        );
+
+        // Fade out only this one — others keep orbiting
         await target.hide();
         if (signal.cancelled) break;
 
-        await sleep(900, signal);
+        await sleep(BEAT_AFTER_HIDE_MS, signal);
         if (signal.cancelled) break;
 
-        const nextAngle = pickFreeAngle(
-          occupiedOn(target.orbit, target.id),
-          occupiedOn(otherOrbitOf(target.orbit), target.id),
-          oldAngle ?? undefined,
+        const other: OrbitId = target.orbit === 'outer' ? 'inner' : 'outer';
+        const nextLocal = pickFreeLocalAngle(
+          target.orbit,
+          worldAngles(target.orbit, target.id),
+          worldAngles(other),
+          progressOf(target.orbit),
+          oldWorld,
         );
-        await target.showAt(nextAngle);
+        await target.showAt(nextLocal);
       }
     };
 
@@ -535,8 +651,8 @@ export function OnboardingOrbit({
 
   return (
     <View style={[styles.root, { width: size, height: size }, style]}>
-      <GlowRing size={outer} duration={9000} strokeWidth={2.2} />
-      <GlowRing size={inner} duration={7000} reverse soft strokeWidth={1.8} />
+      <GlowRing size={outer} duration={7200} strokeWidth={2.2} />
+      <GlowRing size={inner} duration={5400} reverse soft strokeWidth={1.8} />
 
       <AnimatedView
         style={[
