@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
+import { BottomNav } from '../components/BottomNav';
 import { PickerSheet } from '../components/PickerSheet';
 import { AirportSearchSheet } from '../components/AirportSearchSheet';
 import {
@@ -570,6 +571,8 @@ export default function Account() {
           }}
         />
       )}
+
+      <BottomNav active="account" />
     </SafeAreaView>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   ScrollView,
@@ -22,6 +22,7 @@ import { DestinationSheet } from '../components/DestinationSheet';
 import { PaxSheet } from '../components/PaxSheet';
 import { GlowingPaxButton } from '../components/GlowingPaxButton';
 import { WeatherIcon, WeatherPill } from '../components/WeatherIcon';
+import { BottomNav } from '../components/BottomNav';
 import {
   SearchMorphOverlay,
   type SearchBarRect,
@@ -36,6 +37,11 @@ import {
   type NearbyAirport,
 } from '../data/destinations';
 import { homeWeather, weatherFor } from '../data/weather';
+import {
+  isFavorite,
+  toggleFavorite,
+  subscribeFavorites,
+} from '../data/favorites';
 
 const { width: SW } = Dimensions.get('window');
 const HPAD = spacing.lg;
@@ -96,6 +102,9 @@ export default function Home() {
   const [paxOpen, setPaxOpen] = useState(false);
   const [morphFrom, setMorphFrom] = useState<SearchBarRect | null>(null);
   const [morphing, setMorphing] = useState(false);
+  const [favTick, setFavTick] = useState(0);
+
+  useEffect(() => subscribeFavorites(() => setFavTick((n) => n + 1)), []);
 
   const pinned = useRef(new Animated.Value(0)).current;
   const homeFade = useRef(new Animated.Value(1)).current;
@@ -326,6 +335,8 @@ export default function Home() {
           {dealsNow.map(({ dest, saving }) => {
             const pct = Math.round((saving / dest.typicalPrice) * 100);
             const wx = weatherFor(`${dest.city}-${dest.iata}`);
+            const saved = isFavorite(dest.id);
+            void favTick;
             return (
               <PressCard
                 key={dest.id}
@@ -339,6 +350,21 @@ export default function Home() {
                     {pct}% off
                   </Text>
                 </View>
+                <Pressable
+                  style={s.dealHeart}
+                  onPress={() => {
+                    const on = toggleFavorite(dest.id);
+                    showNotice(on ? `Saved ${dest.city}` : `Removed ${dest.city}`);
+                  }}
+                  hitSlop={6}
+                  accessibilityLabel={saved ? 'Remove from saved' : 'Save destination'}
+                >
+                  <Feather
+                    name="heart"
+                    size={16}
+                    color={saved ? palette.error : palette.gray700}
+                  />
+                </Pressable>
                 <View style={s.dealWeather} accessibilityLabel={wx.label}>
                   <WeatherIcon kind={wx.kind} size={22} />
                 </View>
@@ -375,6 +401,8 @@ export default function Home() {
         <View style={s.grid}>
           {weekendEscapes.map((d) => {
             const wx = weatherFor(`${d.city}-${d.iata}`);
+            const saved = isFavorite(d.id);
+            void favTick;
             return (
             <PressCard
               key={d.id}
@@ -394,6 +422,22 @@ export default function Home() {
               <View style={s.gridWeather} accessibilityLabel={wx.label}>
                 <WeatherIcon kind={wx.kind} size={24} />
               </View>
+
+              <Pressable
+                style={s.gridHeart}
+                onPress={() => {
+                  const on = toggleFavorite(d.id);
+                  showNotice(on ? `Saved ${d.city}` : `Removed ${d.city}`);
+                }}
+                hitSlop={6}
+                accessibilityLabel={saved ? 'Remove from saved' : 'Save destination'}
+              >
+                <Feather
+                  name="heart"
+                  size={16}
+                  color={saved ? palette.error : palette.gray700}
+                />
+              </Pressable>
 
               <View style={s.gridBody}>
                 <Text style={s.gridCity}>{d.city}</Text>
@@ -419,12 +463,7 @@ export default function Home() {
       </ScrollView>
 
       {/* ── Tabs ── */}
-      <View style={s.tabs}>
-        <Tab icon="compass" label="Explore" active onPress={() => {}} />
-        <Tab icon="map" label="Trips" onPress={() => router.push('/trips')} />
-        <Tab icon="heart" label="Saved" onPress={() => showNotice('Saved arrives in a later release')} />
-        <Tab icon="user" label="Account" onPress={() => router.push('/account')} />
-      </View>
+      <BottomNav active="home" />
       </Animated.View>
 
       {/* ── Sheets ── */}
@@ -466,28 +505,6 @@ export default function Home() {
         onFinished={onMorphFinished}
       />
     </SafeAreaView>
-  );
-}
-
-function Tab({
-  icon,
-  label,
-  active,
-  onPress,
-}: {
-  icon: string;
-  label: string;
-  active?: boolean;
-  onPress: () => void;
-}) {
-  const tint = active ? palette.primary500 : palette.gray400;
-  return (
-    <Pressable style={s.tab} onPress={onPress}>
-      <Feather name={icon as never} size={21} color={tint} />
-      <Text variant="caption" style={{ color: tint, marginTop: 3 }}>
-        {label}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -676,11 +693,22 @@ const s = StyleSheet.create({
   dealWeather: {
     position: 'absolute',
     top: spacing.sm,
-    right: spacing.sm,
+    right: 46,
     width: 30,
     height: 30,
     borderRadius: 15,
     backgroundColor: 'rgba(255,255,255,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dealHeart: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.95)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -739,6 +767,17 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  gridHeart: {
+    position: 'absolute',
+    top: 44,
+    left: spacing.sm,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   gridBody: { padding: spacing.md },
   gridCity: {
     fontSize: 22,
@@ -747,23 +786,4 @@ const s = StyleSheet.create({
     color: palette.white,
   },
   gridPrice: { marginTop: spacing.sm },
-
-  // Tabs
-  tabs: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: palette.gray200,
-    backgroundColor: palette.white,
-  },
-  tab: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 64,
-    minHeight: 48,
-    paddingVertical: spacing.xs,
-  },
 });

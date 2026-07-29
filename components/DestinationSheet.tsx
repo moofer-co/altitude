@@ -20,6 +20,7 @@ import {
   priceBounds,
   type Destination,
 } from '../data/destinations';
+import { isFavorite, toggleFavorite, subscribeFavorites } from '../data/favorites';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const HPAD = spacing.lg;
@@ -48,7 +49,10 @@ export function DestinationSheet({
 }) {
   const insets = useSafeAreaInsets();
   const [activeMonth, setActiveMonth] = useState<string | null>(null);
+  const [favTick, setFavTick] = useState(0);
   const translateY = useRef(new Animated.Value(SHEET_H)).current;
+
+  useEffect(() => subscribeFavorites(() => setFavTick((n) => n + 1)), []);
 
   useEffect(() => {
     if (visible) {
@@ -107,6 +111,8 @@ export function DestinationSheet({
     ? destination.prices.find((p) => p.month === activeMonth)
     : null;
   const saving = destination.typicalPrice - destination.fromPrice;
+  const saved = isFavorite(destination.id);
+  void favTick;
 
   return (
     <Modal
@@ -139,6 +145,19 @@ export function DestinationSheet({
 
               <Pressable style={s.heroClose} onPress={dismiss} hitSlop={10}>
                 <Feather name="x" size={20} color={palette.white} />
+              </Pressable>
+
+              <Pressable
+                style={s.heroSave}
+                onPress={() => toggleFavorite(destination.id)}
+                hitSlop={8}
+                accessibilityLabel={saved ? 'Remove from saved' : 'Save destination'}
+              >
+                <Feather
+                  name="heart"
+                  size={18}
+                  color={saved ? palette.error : palette.white}
+                />
               </Pressable>
 
               <View style={s.heroText}>
@@ -409,6 +428,17 @@ const s = StyleSheet.create({
     position: 'absolute',
     top: spacing.lg,
     right: HPAD,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroSave: {
+    position: 'absolute',
+    top: spacing.lg,
+    right: HPAD + 48,
     width: 40,
     height: 40,
     borderRadius: 20,

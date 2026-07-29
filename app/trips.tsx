@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, Plane } from '../components/ui';
+import { BottomNav } from '../components/BottomNav';
 import { palette, spacing, radii, shadows } from '../constants/tokens';
 import {
   allTrips,
@@ -152,6 +153,8 @@ export default function Trips() {
 
         <View style={{ height: spacing.xl }} />
       </ScrollView>
+
+      <BottomNav active="trips" />
     </SafeAreaView>
   );
 }
