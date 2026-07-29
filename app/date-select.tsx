@@ -8,6 +8,7 @@ import {
   LayoutAnimation,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, Button, Row } from '../components/ui';
 import { palette, spacing, radii } from '../constants/tokens';
@@ -592,6 +593,8 @@ export default function DateSelect() {
     }
   }, [currentMonth, currentYear, handleDateSelect]);
 
+  const router = useRouter();
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       {/* Header */}
@@ -609,7 +612,12 @@ export default function DateSelect() {
             </View>
           )}
         </View>
-        <Pressable style={styles.closeBtn} onPress={() => {}}>
+        <Pressable
+          style={styles.closeBtn}
+          onPress={() => {
+            if (router.canGoBack()) router.back();
+          }}
+        >
           <Feather name="x" size={20} color={palette.gray600} />
         </Pressable>
       </Row>
@@ -647,7 +655,10 @@ export default function DateSelect() {
       <View style={styles.ctaContainer}>
         <Button
           label={selectedDate ? 'Continue' : 'Select a date'}
-          onPress={() => {}}
+          onPress={() => {
+            if (!selectedDate) return;
+            router.push('/flights');
+          }}
           rounded
           disabled={!selectedDate}
         />

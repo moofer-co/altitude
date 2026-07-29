@@ -17,9 +17,11 @@ import { Text, Row } from '../components/ui';
 import { AirportAlphabetList } from '../components/AirportAlphabetList';
 import { AirportSearchSheet } from '../components/AirportSearchSheet';
 import { KeyboardBottomPad } from '../components/KeyboardBottomPad';
+import { WeatherBadge } from '../components/WeatherIcon';
 import { SCRUBBER_SLOT_W } from '../components/AlphabetScrubber';
 import { palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports, airports } from '../data/airports';
+import { weatherFor } from '../data/weather';
 import {
   getPreferences,
   updatePreferences,
@@ -119,12 +121,20 @@ export default function AirportSearch() {
     [query, isSearching],
   );
 
-  const handleSelect = useCallback((airport: Airport) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setSelected(airport);
-    Keyboard.dismiss();
-    inputRef.current?.blur();
-  }, []);
+  const handleSelect = useCallback(
+    (airport: Airport) => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setSelected(airport);
+      Keyboard.dismiss();
+      inputRef.current?.blur();
+      // Single-city path: destination → date → flights
+      router.push({
+        pathname: '/date-select',
+        params: { to: airport.iata, city: airport.city },
+      });
+    },
+    [router],
+  );
 
   const beginScrub = useCallback(() => {
     Keyboard.dismiss();
@@ -158,15 +168,33 @@ export default function AirportSearch() {
             </Text>
             <Feather name="chevron-down" size={14} color={palette.gray500} />
           </Pressable>
-          <Pressable
-            style={styles.closeBtn}
-            onPress={() => {
-              if (router.canGoBack()) router.back();
-            }}
-            hitSlop={6}
-          >
-            <Feather name="x" size={20} color={palette.gray600} />
-          </Pressable>
+
+          <View style={styles.headerActions}>
+            <Pressable
+              style={styles.multiCityBtn}
+              onPress={() => {
+                Keyboard.dismiss();
+                router.push('/multi-city');
+              }}
+              hitSlop={4}
+              accessibilityRole="button"
+              accessibilityLabel="Add multi-city itinerary"
+            >
+              <Feather name="plus" size={14} color={palette.primary600} />
+              <Text variant="bodySmall" style={styles.multiCityLabel}>
+                Multi-city
+              </Text>
+            </Pressable>
+            <Pressable
+              style={styles.closeBtn}
+              onPress={() => {
+                if (router.canGoBack()) router.back();
+              }}
+              hitSlop={6}
+            >
+              <Feather name="x" size={20} color={palette.gray600} />
+            </Pressable>
+          </View>
         </Row>
       </Animated.View>
 
@@ -204,7 +232,9 @@ export default function AirportSearch() {
                   >
                     Did you mean
                   </Text>
-                  {searchResults.map((airport) => (
+                  {searchResults.map((airport) => {
+                    const wx = weatherFor(`${airport.city}-${airport.iata}`);
+                    return (
                     <Pressable
                       key={`${airport.iata}-${airport.city}`}
                       style={({ pressed }) => [
@@ -213,12 +243,16 @@ export default function AirportSearch() {
                       ]}
                       onPress={() => handleSelect(airport)}
                     >
-                      <HighlightedText
-                        text={`${airport.city} (${airport.iata})`}
-                        highlight={query}
-                      />
+                      <View style={styles.resultMain}>
+                        <HighlightedText
+                          text={`${airport.city} (${airport.iata})`}
+                          highlight={query}
+                        />
+                        <WeatherBadge weather={wx} size={22} />
+                      </View>
                     </Pressable>
-                  ))}
+                    );
+                  })}
                 </>
               ) : (
                 <View style={styles.noResults}>
@@ -301,12 +335,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     gap: spacing.xs,
-    maxWidth: '78%',
+    flexShrink: 1,
+    maxWidth: '52%',
     borderWidth: 1,
     borderColor: palette.gray200,
   },
   locationText: {
     flexShrink: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  multiCityBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.full,
+    backgroundColor: palette.primary50,
+    borderWidth: 1,
+    borderColor: palette.primary100,
+  },
+  multiCityLabel: {
+    color: palette.primary700,
+    fontWeight: '600',
   },
   closeBtn: {
     width: 44,
@@ -358,6 +413,11 @@ const styles = StyleSheet.create({
   },
   resultRowPressed: {
     backgroundColor: palette.gray50,
+  },
+  resultMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   noResults: {
     gap: spacing.xs,

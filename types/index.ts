@@ -31,7 +31,7 @@ export interface Passengers {
 
 // ─── Search ──────────────────────────────────────────────
 
-export type TripType = 'oneWay' | 'roundTrip';
+export type TripType = 'oneWay' | 'roundTrip' | 'multiCity';
 export type CabinClass = 'economy' | 'premiumEconomy' | 'business' | 'first';
 
 export interface FlightSearch {

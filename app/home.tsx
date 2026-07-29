@@ -21,6 +21,7 @@ import { LocationSheet } from '../components/LocationSheet';
 import { DestinationSheet } from '../components/DestinationSheet';
 import { PaxSheet } from '../components/PaxSheet';
 import { GlowingPaxButton } from '../components/GlowingPaxButton';
+import { WeatherIcon, WeatherPill } from '../components/WeatherIcon';
 import {
   SearchMorphOverlay,
   type SearchBarRect,
@@ -34,6 +35,7 @@ import {
   type Destination,
   type NearbyAirport,
 } from '../data/destinations';
+import { homeWeather, weatherFor } from '../data/weather';
 
 const { width: SW } = Dimensions.get('window');
 const HPAD = spacing.lg;
@@ -179,6 +181,14 @@ export default function Home() {
             <Text variant="bodySmall">Hello, Ramesh</Text>
           </Pressable>
 
+          <WeatherPill
+            weather={homeWeather(origin.city, origin.iata)}
+            onPress={() => {
+              const wx = homeWeather(origin.city, origin.iata);
+              showNotice(`${origin.city}: ${wx.tempC}° · ${wx.label}`);
+            }}
+          />
+
           <View style={s.greetingRight}>
             {/* Origin chip appears once the main pill scrolls away */}
             <Animated.View
@@ -284,6 +294,7 @@ export default function Home() {
         >
           {dealsNow.map(({ dest, saving }) => {
             const pct = Math.round((saving / dest.typicalPrice) * 100);
+            const wx = weatherFor(`${dest.city}-${dest.iata}`);
             return (
               <PressCard
                 key={dest.id}
@@ -296,6 +307,9 @@ export default function Home() {
                   <Text variant="caption" style={{ color: palette.white, fontWeight: '700' }}>
                     {pct}% off
                   </Text>
+                </View>
+                <View style={s.dealWeather} accessibilityLabel={wx.label}>
+                  <WeatherIcon kind={wx.kind} size={22} />
                 </View>
                 <View style={s.dealBody}>
                   <Text variant="bodyMedium" style={{ color: palette.white }}>
@@ -328,7 +342,9 @@ export default function Home() {
         </View>
 
         <View style={s.grid}>
-          {weekendEscapes.map((d) => (
+          {weekendEscapes.map((d) => {
+            const wx = weatherFor(`${d.city}-${d.iata}`);
+            return (
             <PressCard
               key={d.id}
               style={s.gridCard}
@@ -342,6 +358,10 @@ export default function Home() {
                 <Text variant="caption" style={{ color: palette.white }}>
                   {formatFlightTime(d.flightMinutes)}
                 </Text>
+              </View>
+
+              <View style={s.gridWeather} accessibilityLabel={wx.label}>
+                <WeatherIcon kind={wx.kind} size={24} />
               </View>
 
               <View style={s.gridBody}>
@@ -360,7 +380,8 @@ export default function Home() {
                 </View>
               </View>
             </PressCard>
-          ))}
+            );
+          })}
         </View>
 
         <View style={{ height: spacing.lg }} />
@@ -450,6 +471,7 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: HPAD,
     paddingVertical: spacing.sm,
+    gap: spacing.xs,
   },
   profile: {
     flexDirection: 'row',
@@ -461,6 +483,7 @@ const s = StyleSheet.create({
     paddingRight: spacing.md,
     paddingVertical: spacing.xs,
     minHeight: 48,
+    flexShrink: 1,
   },
   avatar: {
     width: 38,
@@ -599,6 +622,17 @@ const s = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: radii.sm,
   },
+  dealWeather: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   dealBody: { padding: spacing.md },
 
   // Grid
@@ -642,6 +676,17 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
     borderRadius: radii.sm,
+  },
+  gridWeather: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   gridBody: { padding: spacing.md },
   gridCity: {

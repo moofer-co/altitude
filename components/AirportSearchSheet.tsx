@@ -11,9 +11,11 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
 import { AirportAlphabetList } from './AirportAlphabetList';
+import { WeatherBadge } from './WeatherIcon';
 import { SCRUBBER_SLOT_W } from './AlphabetScrubber';
 import { palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports } from '../data/airports';
+import { weatherFor } from '../data/weather';
 import { searchAirports } from '../lib/airportSearch';
 import type { Airport } from '../types';
 
@@ -117,7 +119,9 @@ export function AirportSearchSheet({
                   >
                     Did you mean
                   </Text>
-                  {searchResults.map((airport) => (
+                  {searchResults.map((airport) => {
+                    const wx = weatherFor(`${airport.city}-${airport.iata}`);
+                    return (
                     <Pressable
                       key={`${airport.iata}-${airport.city}`}
                       style={({ pressed }) => [
@@ -127,15 +131,19 @@ export function AirportSearchSheet({
                       ]}
                       onPress={() => handleSelect(airport)}
                     >
-                      <HighlightedText
-                        text={`${airport.city} (${airport.iata})`}
-                        highlight={query}
-                      />
+                      <View style={styles.resultMain}>
+                        <HighlightedText
+                          text={`${airport.city} (${airport.iata})`}
+                          highlight={query}
+                        />
+                        <WeatherBadge weather={wx} size={20} />
+                      </View>
                       {selectedIata === airport.iata && (
                         <Feather name="check" size={18} color={palette.primary600} />
                       )}
                     </Pressable>
-                  ))}
+                    );
+                  })}
                 </>
               ) : (
                 <View style={styles.noResults}>
@@ -217,9 +225,17 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xs,
     borderRadius: radii.sm,
+    gap: spacing.sm,
   },
   resultRowPressed: { backgroundColor: palette.gray50 },
   rowSelected: { backgroundColor: palette.primary50 },
+  resultMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minWidth: 0,
+  },
   noResults: {
     paddingTop: spacing.xl,
     gap: spacing.xs,
