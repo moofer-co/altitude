@@ -6,6 +6,9 @@ import { colors, spacing, palette } from '../constants/tokens';
 
 const screens = [
   { route: '/onboarding', label: 'Onboarding', status: 'built' },
+  { route: '/sign-in', label: 'Sign in', status: 'built' },
+  { route: '/register', label: 'Register', status: 'built' },
+  { route: '/setup', label: 'New user setup', status: 'built' },
   { route: '/home', label: 'Home', status: 'built' },
   { route: '/airport-search', label: 'Airport search', status: 'built' },
   { route: '/multi-city', label: 'Multi-city', status: 'built' },

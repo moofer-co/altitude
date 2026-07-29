@@ -21,7 +21,8 @@ type TravelKind =
   | 'globe'
   | 'ticket'
   | 'compass'
-  | 'sun';
+  | 'sun'
+  | 'anchor';
 
 type OrbitId = 'outer' | 'inner';
 
@@ -40,16 +41,19 @@ const MIN_VISIBLE_MS = 18000;
 const GAP_AFTER_APPEAR_MS = 4500;
 const INITIAL_STAGGER_MS = 2800;
 const BEAT_AFTER_HIDE_MS = 1800;
+/** Pause between introducing elements 6 → 9 while others keep spinning. */
+const RAMP_GAP_MS = 5200;
 
-/** How many elements are visible at once. */
-const VISIBLE_COUNT = 5;
+/** Start with five; ramp up to nine. */
+const OPEN_COUNT = 5;
+const MAX_VISIBLE = 9;
 
 /** Orbital pace. */
 const OUTER_SPIN_MS = 52000;
 const INNER_SPIN_MS = 38000;
 
-const MIN_GAP_DEG = 62;
-const CROSS_GAP_DEG = 48;
+const MIN_GAP_DEG = 58;
+const CROSS_GAP_DEG = 44;
 
 /** Prefer switching rings when reappearing. */
 const SWITCH_ORBIT_CHANCE = 0.7;
@@ -63,9 +67,10 @@ const ELEMENTS: ElementSpec[] = [
   { id: 'compass', kind: 'compass', size: 36, color: '#A78BFA', iconColor: palette.white },
   { id: 'ticket', kind: 'ticket', size: 34, color: '#F472B6', iconColor: palette.white },
   { id: 'sun', kind: 'sun', size: 32, color: '#FBBF24', iconColor: '#78350F' },
+  { id: 'anchor', kind: 'anchor', size: 36, color: '#0891B2', iconColor: palette.white },
 ];
 
-/** Spaced seed poses used for the opening five. */
+/** Spaced seed poses for the opening five, then ramp introduces. */
 const SEED_POSES: { orbit: OrbitId; angle: number }[] = [
   { orbit: 'outer', angle: -30 },
   { orbit: 'outer', angle: 55 },
@@ -75,6 +80,7 @@ const SEED_POSES: { orbit: OrbitId; angle: number }[] = [
   { orbit: 'outer', angle: 250 },
   { orbit: 'inner', angle: 20 },
   { orbit: 'inner', angle: 175 },
+  { orbit: 'outer', angle: 300 },
 ];
 
 function TravelIcon({
@@ -104,6 +110,8 @@ function TravelIcon({
       return <Feather name="compass" size={s} color={color} />;
     case 'sun':
       return <Feather name="sun" size={s} color={color} />;
+    case 'anchor':
+      return <Feather name="navigation" size={s} color={color} />;
   }
 }
 
@@ -569,7 +577,9 @@ export function OnboardingOrbit({
       if (signal.cancelled) return;
 
       // Open with 5 randomly chosen elements on spaced seed poses
-      const opener = shuffle(ELEMENTS).slice(0, VISIBLE_COUNT);
+      const shuffled = shuffle(ELEMENTS);
+      const opener = shuffled.slice(0, OPEN_COUNT);
+      const waiting = shuffled.slice(OPEN_COUNT);
       for (let i = 0; i < opener.length; i++) {
         if (signal.cancelled) return;
         const spec = opener[i];
@@ -580,6 +590,18 @@ export function OnboardingOrbit({
         await sleep(INITIAL_STAGGER_MS, signal);
       }
 
+      // Ramp 6 → 9: introduce waiting elements while others keep spinning
+      for (let i = 0; i < waiting.length && !signal.cancelled; i++) {
+        await sleep(RAMP_GAP_MS, signal);
+        if (signal.cancelled) break;
+        const spec = waiting[i];
+        const h = handles.current.get(spec.id);
+        if (!h || h.isVisible()) continue;
+        const { orbit, angle } = placeFor(spec.id, undefined, undefined);
+        await h.showAt(orbit, angle);
+      }
+
+      // Steady cycle: hide one → beat → reappear elsewhere (count stays ~9)
       while (!signal.cancelled) {
         await sleep(GAP_AFTER_APPEAR_MS, signal);
         if (signal.cancelled) break;
@@ -617,7 +639,6 @@ export function OnboardingOrbit({
         await sleep(BEAT_AFTER_HIDE_MS, signal);
         if (signal.cancelled) break;
 
-        // Prefer bringing in a waiting element; sometimes the same one returns
         const hidden = [...handles.current.values()].filter(
           (h) => !h.isVisible(),
         );
@@ -628,11 +649,7 @@ export function OnboardingOrbit({
         const next =
           pool[Math.floor(Math.random() * pool.length)] ?? leaving;
 
-        const { orbit, angle } = placeFor(
-          next.id,
-          leftWorld,
-          leftOrbit,
-        );
+        const { orbit, angle } = placeFor(next.id, leftWorld, leftOrbit);
         await next.showAt(orbit, angle);
       }
     };

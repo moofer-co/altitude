@@ -64,12 +64,13 @@ export default function Onboarding() {
           </Text>
         </Animated.View>
 
-        <Button
-          label="Get started"
-          onPress={() => router.replace('/home')}
-          rounded
-          style={styles.cta}
-        />
+        <View style={styles.ctaWrap}>
+          <Button
+            label="Get started"
+            onPress={() => router.push('/sign-in')}
+            rounded
+          />
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -85,19 +86,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   illustration: {
-    flex: 1,
+    flex: 1.15,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
   },
   content: {
-    paddingBottom: spacing.xl,
+    // Lift copy away from the CTA
+    paddingBottom: spacing.xxl,
+    marginBottom: spacing.md,
   },
   subtitle: {
     marginTop: spacing.sm,
     paddingHorizontal: spacing.md,
   },
-  cta: {
+  ctaWrap: {
+    paddingTop: spacing.lg,
     marginBottom: spacing.md,
   },
 });
