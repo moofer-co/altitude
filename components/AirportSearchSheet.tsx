@@ -10,43 +10,11 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
+import { AlphabetScrubber } from './AlphabetScrubber';
 import { palette, spacing, radii, typography } from '../constants/tokens';
 import { allAirports } from '../data/airports';
+import { groupAirportsByLetter, searchAirports } from '../lib/airportSearch';
 import type { Airport } from '../types';
-
-/** Group airports by first letter of city, sorted Z→A — same as airport search. */
-function groupByLetter(list: Airport[]) {
-  const map = new Map<string, Airport[]>();
-  for (const a of list) {
-    const letter = a.city[0].toUpperCase();
-    if (!map.has(letter)) map.set(letter, []);
-    map.get(letter)!.push(a);
-  }
-  return [...map.entries()]
-    .sort(([a], [b]) => b.localeCompare(a))
-    .map(([letter, data]) => ({
-      title: letter,
-      data: data.sort((a, b) => b.city.localeCompare(a.city)),
-    }));
-}
-
-function searchAirports(query: string, list: Airport[]) {
-  const q = query.toLowerCase().trim();
-  if (!q) return [];
-  return list
-    .filter(
-      (a) =>
-        a.city.toLowerCase().includes(q) ||
-        a.iata.toLowerCase().includes(q) ||
-        a.name.toLowerCase().includes(q),
-    )
-    .sort((a, b) => {
-      const aPrefix = a.city.toLowerCase().startsWith(q) ? 0 : 1;
-      const bPrefix = b.city.toLowerCase().startsWith(q) ? 0 : 1;
-      if (aPrefix !== bPrefix) return aPrefix - bPrefix;
-      return a.city.localeCompare(b.city);
-    });
-}
 
 function HighlightedText({ text, highlight }: { text: string; highlight: string }) {
   if (!highlight.trim()) {
@@ -65,44 +33,9 @@ function HighlightedText({ text, highlight }: { text: string; highlight: string 
   );
 }
 
-const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').reverse();
-
-function AlphabetScrubber({
-  activeLetters,
-  onPress,
-}: {
-  activeLetters: Set<string>;
-  onPress: (letter: string) => void;
-}) {
-  return (
-    <View style={styles.scrubber}>
-      {LETTERS.map((letter) => {
-        const isActive = activeLetters.has(letter);
-        return (
-          <Pressable
-            key={letter}
-            onPress={() => isActive && onPress(letter)}
-            hitSlop={4}
-          >
-            <Text
-              style={[
-                styles.scrubberLetter,
-                isActive ? styles.scrubberActive : styles.scrubberInactive,
-              ]}
-            >
-              {letter}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
 /**
  * Same interaction as `app/airport-search.tsx`: bottom search field, Z→A list,
- * alphabet scrubber, and highlighted "Did you mean" results. Used wherever
- * Account (or elsewhere) needs to pick an airport without inventing a second UI.
+ * magnified alphabet scrubber, and highlighted "Did you mean" results.
  */
 export function AirportSearchSheet({
   visible,
@@ -131,7 +64,7 @@ export function AirportSearchSheet({
   }, [visible]);
 
   const isSearching = query.length > 0;
-  const sections = useMemo(() => groupByLetter(allAirports), []);
+  const sections = useMemo(() => groupAirportsByLetter(allAirports), []);
   const searchResults = useMemo(
     () => (isSearching ? searchAirports(query, allAirports) : []),
     [query, isSearching],
@@ -150,7 +83,7 @@ export function AirportSearchSheet({
     [onSelect, onClose],
   );
 
-  const handleScrubberPress = useCallback(
+  const handleScrubberSelect = useCallback(
     (letter: string) => {
       const sectionIndex = sections.findIndex((s) => s.title === letter);
       if (sectionIndex >= 0 && listRef.current) {
@@ -158,7 +91,7 @@ export function AirportSearchSheet({
           sectionIndex,
           itemIndex: 0,
           viewOffset: 40,
-          animated: true,
+          animated: false,
         });
       }
     },
@@ -250,7 +183,7 @@ export function AirportSearchSheet({
             />
             <AlphabetScrubber
               activeLetters={activeLetters}
-              onPress={handleScrubberPress}
+              onSelect={handleScrubberSelect}
             />
           </View>
         )}
@@ -300,6 +233,7 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
+    paddingRight: 36,
   },
   airportRow: {
     flexDirection: 'row',
@@ -330,20 +264,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
   },
-
-  scrubber: {
-    width: 22,
-    paddingTop: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scrubberLetter: {
-    fontSize: 10,
-    lineHeight: 14,
-    fontWeight: '600',
-  },
-  scrubberActive: { color: palette.primary600 },
-  scrubberInactive: { color: palette.gray300 },
 
   searchResults: {
     flex: 1,

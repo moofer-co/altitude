@@ -22,9 +22,11 @@ import { airports } from '../data/airports';
 import {
   initialProfile,
   initialTravellers,
-  initialPreferences,
   initialNotifications,
   initialPaymentMethods,
+  getPreferences,
+  updatePreferences,
+  subscribePreferences,
   spendSummary,
   topRoutes,
   documentNeedsAttention,
@@ -72,12 +74,13 @@ export default function Account() {
 
   const [profile, setProfile] = useState<Profile>(initialProfile);
   const [travellers, setTravellers] = useState<SavedTraveller[]>(initialTravellers);
-  const [prefs, setPrefs] = useState<Preferences>(initialPreferences);
+  const [prefs, setPrefs] = useState<Preferences>(getPreferences);
   const [notifs, setNotifs] = useState<NotificationSetting[]>(initialNotifications);
   const [methods, setMethods] = useState<PaymentMethod[]>(initialPaymentMethods);
   const [loyalty, setLoyalty] = useState<LinkedLoyalty[]>(getLinkedLoyalty);
 
   useEffect(() => subscribeLoyalty(() => setLoyalty(getLinkedLoyalty())), []);
+  useEffect(() => subscribePreferences(() => setPrefs(getPreferences())), []);
 
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [editTraveller, setEditTraveller] = useState<SavedTraveller | null>(null);
@@ -547,7 +550,7 @@ export default function Account() {
         subtitle="Same search as Find flights — pick your usual origin"
         onClose={closeSheets}
         onSelect={(airport) => {
-          setPrefs((p) => ({ ...p, homeAirport: airport.iata }));
+          updatePreferences({ homeAirport: airport.iata });
           closeSheets();
         }}
       />
@@ -562,7 +565,7 @@ export default function Account() {
           selected={prefs[prefPicker]}
           onClose={() => setPrefPicker(null)}
           onSelect={(v) => {
-            setPrefs((p) => ({ ...p, [prefPicker]: v }));
+            updatePreferences({ [prefPicker]: v });
             setPrefPicker(null);
           }}
         />

@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   TextInput,
@@ -9,52 +9,20 @@ import {
   LayoutAnimation,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, Row } from '../components/ui';
-import { colors, palette, spacing, radii, typography } from '../constants/tokens';
-import { allAirports } from '../data/airports';
+import { AlphabetScrubber } from '../components/AlphabetScrubber';
+import { AirportSearchSheet } from '../components/AirportSearchSheet';
+import { palette, spacing, radii, typography } from '../constants/tokens';
+import { allAirports, airports } from '../data/airports';
+import {
+  getPreferences,
+  updatePreferences,
+  subscribePreferences,
+} from '../data/account';
+import { groupAirportsByLetter, searchAirports } from '../lib/airportSearch';
 import type { Airport } from '../types';
-
-// ─── Helpers ─────────────────────────────────────────────
-
-/** Group airports by first letter of city, sorted Z→A */
-function groupByLetter(list: Airport[]) {
-  const map = new Map<string, Airport[]>();
-  for (const a of list) {
-    const letter = a.city[0].toUpperCase();
-    if (!map.has(letter)) map.set(letter, []);
-    map.get(letter)!.push(a);
-  }
-  // Sort groups Z→A, items within group Z→A
-  return [...map.entries()]
-    .sort(([a], [b]) => b.localeCompare(a))
-    .map(([letter, data]) => ({
-      title: letter,
-      data: data.sort((a, b) => b.city.localeCompare(a.city)),
-    }));
-}
-
-/** Fuzzy search — match city name, prioritise prefix */
-function searchAirports(query: string, list: Airport[]) {
-  const q = query.toLowerCase().trim();
-  if (!q) return [];
-  return list
-    .filter(
-      (a) =>
-        a.city.toLowerCase().includes(q) ||
-        a.iata.toLowerCase().includes(q) ||
-        a.name.toLowerCase().includes(q),
-    )
-    .sort((a, b) => {
-      // Prefix matches first
-      const aPrefix = a.city.toLowerCase().startsWith(q) ? 0 : 1;
-      const bPrefix = b.city.toLowerCase().startsWith(q) ? 0 : 1;
-      if (aPrefix !== bPrefix) return aPrefix - bPrefix;
-      return a.city.localeCompare(b.city);
-    });
-}
-
-// ─── Bold match component ────────────────────────────────
 
 function HighlightedText({ text, highlight }: { text: string; highlight: string }) {
   if (!highlight.trim()) {
@@ -79,62 +47,31 @@ function HighlightedText({ text, highlight }: { text: string; highlight: string 
   );
 }
 
-// ─── Alphabet scrubber ───────────────────────────────────
-
-const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').reverse();
-
-function AlphabetScrubber({
-  activeLetters,
-  onPress,
-}: {
-  activeLetters: Set<string>;
-  onPress: (letter: string) => void;
-}) {
-  return (
-    <View style={styles.scrubber}>
-      {LETTERS.map((letter) => {
-        const isActive = activeLetters.has(letter);
-        return (
-          <Pressable
-            key={letter}
-            onPress={() => isActive && onPress(letter)}
-            hitSlop={4}
-          >
-            <Text
-              style={[
-                styles.scrubberLetter,
-                isActive ? styles.scrubberActive : styles.scrubberInactive,
-              ]}
-            >
-              {letter}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-// ─── Main screen ─────────────────────────────────────────
-
 export default function AirportSearch() {
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Airport | null>(null);
+  const [homeOpen, setHomeOpen] = useState(false);
+  const [prefs, setPrefs] = useState(getPreferences);
   const inputRef = useRef<TextInput>(null);
-  const listRef = useRef<SectionList>(null);
+  const listRef = useRef<SectionList<Airport>>(null);
+
+  useEffect(() => subscribePreferences(() => setPrefs(getPreferences())), []);
+
+  const homeAirport = useMemo(() => {
+    return (
+      airports.find((a) => a.iata === prefs.homeAirport) ??
+      allAirports.find((a) => a.iata === prefs.homeAirport) ??
+      null
+    );
+  }, [prefs.homeAirport]);
 
   const isSearching = query.length > 0;
-
-  // Grouped list (Z→A)
-  const sections = useMemo(() => groupByLetter(allAirports), []);
-
-  // Search results
+  const sections = useMemo(() => groupAirportsByLetter(allAirports), []);
   const searchResults = useMemo(
     () => (isSearching ? searchAirports(query, allAirports) : []),
     [query, isSearching],
   );
-
-  // Active letters for scrubber
   const activeLetters = useMemo(
     () => new Set(sections.map((s) => s.title)),
     [sections],
@@ -146,7 +83,7 @@ export default function AirportSearch() {
     Keyboard.dismiss();
   }, []);
 
-  const handleScrubberPress = useCallback(
+  const handleScrubberSelect = useCallback(
     (letter: string) => {
       const sectionIndex = sections.findIndex((s) => s.title === letter);
       if (sectionIndex >= 0 && listRef.current) {
@@ -154,7 +91,7 @@ export default function AirportSearch() {
           sectionIndex,
           itemIndex: 0,
           viewOffset: 40,
-          animated: true,
+          animated: false,
         });
       }
     },
@@ -166,23 +103,37 @@ export default function AirportSearch() {
     inputRef.current?.focus();
   }, []);
 
-  // ── Render ──
+  const homeLabel = homeAirport
+    ? `${homeAirport.city}, ${homeAirport.country}`
+    : prefs.homeAirport;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* Header */}
       <Row justify="space-between" style={styles.header}>
-        <View style={styles.locationPill}>
-          <Text style={{ fontSize: 14 }}>📍</Text>
-          <Text variant="bodySmall">New Delhi, India</Text>
+        <Pressable
+          style={styles.locationPill}
+          onPress={() => {
+            Keyboard.dismiss();
+            setHomeOpen(true);
+          }}
+        >
+          <Feather name="map-pin" size={14} color={palette.primary600} />
+          <Text variant="bodySmall" numberOfLines={1} style={styles.locationText}>
+            {homeLabel}
+          </Text>
           <Feather name="chevron-down" size={14} color={palette.gray500} />
-        </View>
-        <Pressable style={styles.closeBtn} onPress={() => {}}>
+        </Pressable>
+        <Pressable
+          style={styles.closeBtn}
+          onPress={() => {
+            if (router.canGoBack()) router.back();
+          }}
+          hitSlop={6}
+        >
           <Feather name="x" size={20} color={palette.gray600} />
         </Pressable>
       </Row>
 
-      {/* Selected confirmation */}
       {selected && (
         <View style={styles.selectedBanner}>
           <Text variant="bodyMedium" color="textInverse">
@@ -191,10 +142,8 @@ export default function AirportSearch() {
         </View>
       )}
 
-      {/* Content: either full list or search results */}
       <View style={styles.content}>
         {isSearching ? (
-          // ── Search results ──
           <View style={styles.searchResults}>
             {searchResults.length > 0 ? (
               <>
@@ -233,7 +182,6 @@ export default function AirportSearch() {
             )}
           </View>
         ) : (
-          // ── Full Z→A list with scrubber ──
           <View style={styles.listContainer}>
             <SectionList
               ref={listRef}
@@ -263,13 +211,12 @@ export default function AirportSearch() {
             />
             <AlphabetScrubber
               activeLetters={activeLetters}
-              onPress={handleScrubberPress}
+              onSelect={handleScrubberSelect}
             />
           </View>
         )}
       </View>
 
-      {/* Bottom search input */}
       <View style={styles.searchBar}>
         <Feather
           name="search"
@@ -297,11 +244,21 @@ export default function AirportSearch() {
           </Pressable>
         )}
       </View>
+
+      <AirportSearchSheet
+        visible={homeOpen}
+        selectedIata={prefs.homeAirport}
+        title="Home airport"
+        subtitle="Default origin for search — same picker as Account"
+        onClose={() => setHomeOpen(false)}
+        onSelect={(airport) => {
+          updatePreferences({ homeAirport: airport.iata });
+          setHomeOpen(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
-
-// ─── Styles ──────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   safe: {
@@ -309,7 +266,6 @@ const styles = StyleSheet.create({
     backgroundColor: palette.white,
   },
 
-  // Header
   header: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
@@ -322,6 +278,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     gap: spacing.xs,
+    maxWidth: '78%',
+    borderWidth: 1,
+    borderColor: palette.gray200,
+  },
+  locationText: {
+    flexShrink: 1,
   },
   closeBtn: {
     width: 44,
@@ -333,7 +295,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Selected banner
   selectedBanner: {
     backgroundColor: palette.primary500,
     marginHorizontal: spacing.lg,
@@ -344,12 +305,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Content area
   content: {
     flex: 1,
   },
 
-  // ── Full list ──
   listContainer: {
     flex: 1,
     flexDirection: 'row',
@@ -357,6 +316,7 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
+    paddingRight: 36,
   },
   airportRow: {
     paddingVertical: spacing.md,
@@ -385,32 +345,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
 
-  // ── Alphabet scrubber ──
-  scrubber: {
-    position: 'absolute',
-    right: 4,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    width: 24,
-  },
-  scrubberLetter: {
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: 'center',
-  },
-  scrubberActive: {
-    fontWeight: '700',
-    color: palette.gray900,
-  },
-  scrubberInactive: {
-    fontWeight: '400',
-    color: palette.gray300,
-  },
-
-  // ── Search results ──
   searchResults: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -434,7 +368,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
 
-  // ── Search bar ──
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',

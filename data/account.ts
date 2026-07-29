@@ -253,8 +253,33 @@ export const initialPreferences: Preferences = {
   currency: '₹ INR',
 };
 
-/** @deprecated Use initialPreferences + local state. */
+/** @deprecated Use getPreferences() — kept for import compatibility. */
 export const preferences = initialPreferences;
+
+// Shared preferences store so Account and Airport Search share home airport.
+let prefsStore: Preferences = { ...initialPreferences };
+const prefsListeners = new Set<() => void>();
+
+function notifyPrefs() {
+  prefsListeners.forEach((l) => l());
+}
+
+export function getPreferences(): Preferences {
+  return { ...prefsStore };
+}
+
+export function updatePreferences(partial: Partial<Preferences>): Preferences {
+  prefsStore = { ...prefsStore, ...partial };
+  notifyPrefs();
+  return getPreferences();
+}
+
+export function subscribePreferences(listener: () => void): () => void {
+  prefsListeners.add(listener);
+  return () => {
+    prefsListeners.delete(listener);
+  };
+}
 
 export const CURRENCIES = ['₹ INR', '$ USD', '€ EUR', '£ GBP', 'AED'] as const;
 
