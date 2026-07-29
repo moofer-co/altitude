@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   ScrollView,
@@ -7,7 +7,7 @@ import {
   StyleSheet,
   LayoutAnimation,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
@@ -31,26 +31,53 @@ import {
   type Contact,
   type PayMethod,
 } from '../data/booking';
+import {
+  getLinkedLoyalty,
+  subscribeLoyalty,
+  updateLoyaltyPoints,
+  redeemableForBooking,
+  clampRedemption,
+  altitudeEarnPoints,
+  type AppliedRedemption,
+  type RedemptionOption,
+} from '../data/loyalty';
 
 const HPAD = spacing.lg;
 const BASE_FARE = 4250;
 
-const INTERNATIONAL = false; // Set true when the route crosses a border
+const INTERNATIONAL = false;
 const DEPART_ISO = new Date(Date.now() + 19.5 * 3600_000).toISOString();
 
-const FLIGHT = {
-  route: 'DEL → BLR',
-  date: 'Sat, 15 Aug',
-  airline: 'Air India',
-  code: 'AI',
-  color: '#CD2C2C',
-  flightNumber: 'AI 806',
-  depart: '06:15',
-  arrive: '08:50',
-  duration: '2h 35m',
-  fare: 'Economy',
-  refundable: true,
-};
+const FLIGHTS = {
+  '6E': {
+    route: 'DEL → BLR',
+    date: 'Sat, 15 Aug',
+    airline: 'IndiGo',
+    code: '6E',
+    color: '#2B2D6E',
+    flightNumber: '6E 6023',
+    depart: '06:15',
+    arrive: '08:50',
+    duration: '2h 35m',
+    fare: 'Economy',
+    refundable: false,
+  },
+  AI: {
+    route: 'DEL → BLR',
+    date: 'Sat, 15 Aug',
+    airline: 'Air India',
+    code: 'AI',
+    color: '#CD2C2C',
+    flightNumber: 'AI 806',
+    depart: '06:15',
+    arrive: '08:50',
+    duration: '2h 35m',
+    fare: 'Economy',
+    refundable: true,
+  },
+} as const;
+
+type FlightCode = keyof typeof FLIGHTS;
 
 let seq = 0;
 const nextId = () => `p${++seq}`;
@@ -58,6 +85,15 @@ const nextId = () => `p${++seq}`;
 export default function Booking() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ airline?: string }>();
+  const airlineParam = typeof params.airline === 'string' ? params.airline : '6E';
+  const flightCode: FlightCode = airlineParam in FLIGHTS ? (airlineParam as FlightCode) : '6E';
+  const [flightKey, setFlightKey] = useState<FlightCode>(flightCode);
+  const FLIGHT = FLIGHTS[flightKey];
+
+  useEffect(() => {
+    setFlightKey(flightCode);
+  }, [flightCode]);
 
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [contact, setContact] = useState<Contact>({ email: '', phone: '' });
@@ -73,6 +109,12 @@ export default function Booking() {
   const [extras, setExtras] = useState<ExtraKind | null>(null);
   const [seatsOpen, setSeatsOpen] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [earnedPoints, setEarnedPoints] = useState(0);
+
+  const [linked, setLinked] = useState(getLinkedLoyalty);
+  const [applied, setApplied] = useState<AppliedRedemption[]>([]);
+
+  useEffect(() => subscribeLoyalty(() => setLinked(getLinkedLoyalty())), []);
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -83,6 +125,29 @@ export default function Booking() {
     () => buildQuote(passengers, BASE_FARE),
     [passengers],
   );
+
+  // Drop airline redemptions that no longer match the marketing carrier
+  useEffect(() => {
+    setApplied((list) =>
+      list.filter((a) => {
+        const opt = redeemableForBooking(
+          getLinkedLoyalty(),
+          FLIGHT.code,
+          quote.total || 1,
+        ).find((o) => o.programId === a.programId);
+        return !!opt;
+      }),
+    );
+  }, [FLIGHT.code, quote.total]);
+
+  const redeemOptions = useMemo(
+    () => redeemableForBooking(linked, FLIGHT.code, quote.total),
+    [linked, FLIGHT.code, quote.total],
+  );
+
+  const redeemValue = applied.reduce((n, a) => n + a.value, 0);
+  const payable = Math.max(0, quote.total - redeemValue);
+
   const contactErrors = useMemo(() => validateContact(contact), [contact]);
   const blocker = useMemo(
     () => firstBlocker(passengers, contact, method),
@@ -156,9 +221,29 @@ export default function Booking() {
       }
       return;
     }
+    // Burn redeemed points, then credit Altitude earn on the cash portion
+    for (const a of applied) {
+      if (a.points > 0) updateLoyaltyPoints(a.programId, -a.points);
+    }
+    const earn = altitudeEarnPoints(payable);
+    if (earn > 0) updateLoyaltyPoints('altitude', earn);
+    setEarnedPoints(earn);
     animate();
     setPaid(true);
-  }, [blocker]);
+  }, [blocker, applied, payable]);
+
+  const toggleRedeem = (opt: RedemptionOption) => {
+    animate();
+    setApplied((list) => {
+      const existing = list.find((a) => a.programId === opt.programId);
+      if (existing && existing.points > 0) {
+        return list.filter((a) => a.programId !== opt.programId);
+      }
+      // Apply max by default; one programme at a time for clarity
+      const next = clampRedemption(opt, opt.maxPoints);
+      return [next];
+    });
+  };
 
   if (paid) {
     return (
@@ -182,8 +267,17 @@ export default function Booking() {
             </Text>
             <Text variant="bodySmall" color="textSecondary" style={{ marginTop: 6 }}>
               {passengers.length} passenger{passengers.length > 1 ? 's' : ''} · ₹
-              {quote.total.toLocaleString()}
+              {payable.toLocaleString()}
+              {redeemValue > 0 ? ` paid · ₹${redeemValue.toLocaleString()} in points` : ''}
             </Text>
+            {earnedPoints > 0 && (
+              <View style={s.earnRow}>
+                <Feather name="award" size={14} color={palette.primary600} />
+                <Text variant="caption" style={{ color: palette.primary700, flex: 1 }}>
+                  +{earnedPoints.toLocaleString()} Altitude Rewards points earned
+                </Text>
+              </View>
+            )}
           </View>
 
           <Pressable
@@ -467,6 +561,96 @@ export default function Booking() {
           </Text>
         </View>
 
+        {/* ── Loyalty redeem ── */}
+        <SectionLabel>LOYALTY</SectionLabel>
+        <View style={s.extras}>
+          {redeemOptions.length === 0 ? (
+            <View style={s.loyaltyEmpty}>
+              <Feather name="award" size={16} color={palette.gray500} />
+              <Text variant="caption" color="textTertiary" style={{ flex: 1 }}>
+                Link Altitude Rewards or an airline programme in Account to redeem
+                here. IndiGo BluChip only appears on IndiGo flights.
+              </Text>
+            </View>
+          ) : (
+            redeemOptions.map((opt, i) => {
+              const active = applied.find((a) => a.programId === opt.programId);
+              const on = !!(active && active.points > 0);
+              return (
+                <Pressable
+                  key={opt.programId}
+                  style={[
+                    s.payRow,
+                    i === redeemOptions.length - 1 && { borderBottomWidth: 0 },
+                  ]}
+                  onPress={() => toggleRedeem(opt)}
+                >
+                  <View
+                    style={[s.payIcon, { backgroundColor: opt.program.color + '22' }]}
+                  >
+                    <Feather
+                      name={opt.program.kind === 'platform' ? 'award' : 'navigation'}
+                      size={17}
+                      color={opt.program.color}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text variant="bodyMedium">{opt.program.programName}</Text>
+                    <Text variant="caption" color="textTertiary">
+                      {opt.balance.toLocaleString()} pts · up to ₹
+                      {opt.maxValue.toLocaleString()}
+                      {opt.program.kind === 'airline'
+                        ? ` · ${opt.program.airlineName} only`
+                        : ' · any Altitude booking'}
+                    </Text>
+                  </View>
+                  <View style={[s.radio, on && s.radioOn]}>
+                    {on && <Feather name="check" size={13} color={palette.white} />}
+                  </View>
+                </Pressable>
+              );
+            })
+          )}
+        </View>
+        {redeemValue > 0 && (
+          <Text variant="caption" color="textTertiary" style={s.loyaltyHint}>
+            Applying ₹{redeemValue.toLocaleString()} in points. You pay ₹
+            {payable.toLocaleString()} today.
+          </Text>
+        )}
+
+        {/* Demo carrier switch — shows IndiGo vs Air India redemption rules */}
+        <View style={s.carrierSwitch}>
+          <Text variant="caption" color="textTertiary" style={{ marginBottom: 6 }}>
+            Demo flight carrier
+          </Text>
+          <View style={s.carrierRow}>
+            {(Object.keys(FLIGHTS) as FlightCode[]).map((code) => {
+              const f = FLIGHTS[code];
+              const on = flightKey === code;
+              return (
+                <Pressable
+                  key={code}
+                  style={[s.carrierChip, on && { borderColor: f.color, backgroundColor: f.color + '14' }]}
+                  onPress={() => {
+                    animate();
+                    setFlightKey(code);
+                    setApplied([]);
+                  }}
+                >
+                  <View style={[s.carrierDot, { backgroundColor: f.color }]} />
+                  <Text
+                    variant="caption"
+                    style={{ fontWeight: on ? '600' : '400', color: on ? f.color : palette.gray600 }}
+                  >
+                    {f.airline}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
         <View style={{ height: spacing.xl }} />
       </ScrollView>
 
@@ -486,6 +670,26 @@ export default function Booking() {
               <Text variant="bodySmall">₹{l.amount.toLocaleString()}</Text>
             </View>
           ))}
+          {applied
+            .filter((a) => a.value > 0)
+            .map((a) => {
+              const opt = redeemOptions.find((o) => o.programId === a.programId);
+              return (
+                <View key={a.programId} style={s.breakLine}>
+                  <View style={{ flex: 1 }}>
+                    <Text variant="bodySmall">
+                      {opt?.program.programName ?? 'Loyalty'} redemption
+                    </Text>
+                    <Text variant="caption" color="textTertiary">
+                      {a.points.toLocaleString()} points
+                    </Text>
+                  </View>
+                  <Text variant="bodySmall" style={{ color: palette.successDark }}>
+                    −₹{a.value.toLocaleString()}
+                  </Text>
+                </View>
+              );
+            })}
         </View>
       )}
 
@@ -501,7 +705,7 @@ export default function Booking() {
         >
           <View style={s.totalRow}>
             <Text variant="caption" color="textTertiary">
-              Total
+              {redeemValue > 0 ? 'You pay' : 'Total'}
             </Text>
             {passengers.length > 0 && (
               <Feather
@@ -512,7 +716,7 @@ export default function Booking() {
             )}
           </View>
           <Text style={s.total}>
-            ₹{passengers.length === 0 ? '—' : quote.total.toLocaleString()}
+            ₹{passengers.length === 0 ? '—' : payable.toLocaleString()}
           </Text>
         </Pressable>
 
@@ -521,7 +725,7 @@ export default function Booking() {
           onPress={handlePay}
         >
           <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
-            {blocker ? 'Continue' : `Pay ₹${quote.total.toLocaleString()}`}
+            {blocker ? 'Continue' : `Pay ₹${payable.toLocaleString()}`}
           </Text>
           {!blocker && <Feather name="arrow-right" size={17} color={palette.white} />}
         </Pressable>
@@ -864,6 +1068,36 @@ const s = StyleSheet.create({
     marginTop: spacing.md,
   },
 
+  loyaltyEmpty: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  loyaltyHint: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  carrierSwitch: {
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    backgroundColor: palette.gray50,
+    borderRadius: radii.md,
+  },
+  carrierRow: { flexDirection: 'row', gap: spacing.sm },
+  carrierChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: palette.gray200,
+    backgroundColor: palette.white,
+  },
+  carrierDot: { width: 8, height: 8, borderRadius: 4 },
+
   // Breakdown
   breakdown: {
     backgroundColor: palette.gray50,
@@ -948,5 +1182,14 @@ const s = StyleSheet.create({
     borderRadius: radii.lg,
     padding: spacing.lg,
     marginTop: spacing.xl,
+  },
+  earnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: palette.gray200,
   },
 });

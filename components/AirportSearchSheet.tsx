@@ -1,0 +1,391 @@
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import {
+  View,
+  TextInput,
+  SectionList,
+  Pressable,
+  StyleSheet,
+  Keyboard,
+  LayoutAnimation,
+} from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { Text, Sheet } from './ui';
+import { palette, spacing, radii, typography } from '../constants/tokens';
+import { allAirports } from '../data/airports';
+import type { Airport } from '../types';
+
+/** Group airports by first letter of city, sorted Z→A — same as airport search. */
+function groupByLetter(list: Airport[]) {
+  const map = new Map<string, Airport[]>();
+  for (const a of list) {
+    const letter = a.city[0].toUpperCase();
+    if (!map.has(letter)) map.set(letter, []);
+    map.get(letter)!.push(a);
+  }
+  return [...map.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([letter, data]) => ({
+      title: letter,
+      data: data.sort((a, b) => b.city.localeCompare(a.city)),
+    }));
+}
+
+function searchAirports(query: string, list: Airport[]) {
+  const q = query.toLowerCase().trim();
+  if (!q) return [];
+  return list
+    .filter(
+      (a) =>
+        a.city.toLowerCase().includes(q) ||
+        a.iata.toLowerCase().includes(q) ||
+        a.name.toLowerCase().includes(q),
+    )
+    .sort((a, b) => {
+      const aPrefix = a.city.toLowerCase().startsWith(q) ? 0 : 1;
+      const bPrefix = b.city.toLowerCase().startsWith(q) ? 0 : 1;
+      if (aPrefix !== bPrefix) return aPrefix - bPrefix;
+      return a.city.localeCompare(b.city);
+    });
+}
+
+function HighlightedText({ text, highlight }: { text: string; highlight: string }) {
+  if (!highlight.trim()) {
+    return <Text style={styles.airportCity}>{text}</Text>;
+  }
+  const idx = text.toLowerCase().indexOf(highlight.toLowerCase());
+  if (idx === -1) return <Text style={styles.airportCity}>{text}</Text>;
+  return (
+    <Text style={styles.airportCity}>
+      {text.slice(0, idx)}
+      <Text style={styles.airportCityBold}>
+        {text.slice(idx, idx + highlight.length)}
+      </Text>
+      {text.slice(idx + highlight.length)}
+    </Text>
+  );
+}
+
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').reverse();
+
+function AlphabetScrubber({
+  activeLetters,
+  onPress,
+}: {
+  activeLetters: Set<string>;
+  onPress: (letter: string) => void;
+}) {
+  return (
+    <View style={styles.scrubber}>
+      {LETTERS.map((letter) => {
+        const isActive = activeLetters.has(letter);
+        return (
+          <Pressable
+            key={letter}
+            onPress={() => isActive && onPress(letter)}
+            hitSlop={4}
+          >
+            <Text
+              style={[
+                styles.scrubberLetter,
+                isActive ? styles.scrubberActive : styles.scrubberInactive,
+              ]}
+            >
+              {letter}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * Same interaction as `app/airport-search.tsx`: bottom search field, Z→A list,
+ * alphabet scrubber, and highlighted "Did you mean" results. Used wherever
+ * Account (or elsewhere) needs to pick an airport without inventing a second UI.
+ */
+export function AirportSearchSheet({
+  visible,
+  selectedIata,
+  title = 'Home airport',
+  subtitle = 'Used as the default origin when you search',
+  onClose,
+  onSelect,
+}: {
+  visible: boolean;
+  selectedIata?: string;
+  title?: string;
+  subtitle?: string;
+  onClose: () => void;
+  onSelect: (airport: Airport) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<TextInput>(null);
+  const listRef = useRef<SectionList<Airport>>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    setQuery('');
+    const t = setTimeout(() => inputRef.current?.focus(), 350);
+    return () => clearTimeout(t);
+  }, [visible]);
+
+  const isSearching = query.length > 0;
+  const sections = useMemo(() => groupByLetter(allAirports), []);
+  const searchResults = useMemo(
+    () => (isSearching ? searchAirports(query, allAirports) : []),
+    [query, isSearching],
+  );
+  const activeLetters = useMemo(
+    () => new Set(sections.map((s) => s.title)),
+    [sections],
+  );
+
+  const handleSelect = useCallback(
+    (airport: Airport) => {
+      Keyboard.dismiss();
+      onSelect(airport);
+      onClose();
+    },
+    [onSelect, onClose],
+  );
+
+  const handleScrubberPress = useCallback(
+    (letter: string) => {
+      const sectionIndex = sections.findIndex((s) => s.title === letter);
+      if (sectionIndex >= 0 && listRef.current) {
+        listRef.current.scrollToLocation({
+          sectionIndex,
+          itemIndex: 0,
+          viewOffset: 40,
+          animated: true,
+        });
+      }
+    },
+    [sections],
+  );
+
+  return (
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title={title}
+      subtitle={subtitle}
+      heightRatio={0.94}
+    >
+      <View style={styles.content}>
+        {isSearching ? (
+          <View style={styles.searchResults}>
+            {searchResults.length > 0 ? (
+              <>
+                <Text
+                  variant="caption"
+                  color="textTertiary"
+                  style={styles.didYouMean}
+                >
+                  Did you mean
+                </Text>
+                {searchResults.map((airport) => (
+                  <Pressable
+                    key={`${airport.iata}-${airport.city}`}
+                    style={({ pressed }) => [
+                      styles.resultRow,
+                      pressed && styles.resultRowPressed,
+                      selectedIata === airport.iata && styles.rowSelected,
+                    ]}
+                    onPress={() => handleSelect(airport)}
+                  >
+                    <HighlightedText
+                      text={`${airport.city} (${airport.iata})`}
+                      highlight={query}
+                    />
+                    {selectedIata === airport.iata && (
+                      <Feather name="check" size={18} color={palette.primary600} />
+                    )}
+                  </Pressable>
+                ))}
+              </>
+            ) : (
+              <View style={styles.noResults}>
+                <Text variant="body" color="textTertiary" align="center">
+                  No airports found
+                </Text>
+                <Text variant="caption" color="textTertiary" align="center">
+                  Try a different city or airport code
+                </Text>
+              </View>
+            )}
+          </View>
+        ) : (
+          <View style={styles.listContainer}>
+            <SectionList
+              ref={listRef}
+              sections={sections}
+              keyExtractor={(item, index) => `${item.iata}-${item.city}-${index}`}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.airportRow,
+                    pressed && styles.airportRowPressed,
+                    selectedIata === item.iata && styles.rowSelected,
+                  ]}
+                  onPress={() => handleSelect(item)}
+                >
+                  <Text style={styles.airportCity}>
+                    {item.city} ({item.iata})
+                  </Text>
+                  {selectedIata === item.iata && (
+                    <Feather name="check" size={18} color={palette.primary600} />
+                  )}
+                </Pressable>
+              )}
+              renderSectionFooter={({ section }) => (
+                <Text style={styles.sectionLabel}>{section.title}</Text>
+              )}
+              stickySectionHeadersEnabled={false}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.listContent}
+              keyboardShouldPersistTaps="handled"
+              onScrollToIndexFailed={() => {}}
+            />
+            <AlphabetScrubber
+              activeLetters={activeLetters}
+              onPress={handleScrubberPress}
+            />
+          </View>
+        )}
+      </View>
+
+      <View style={styles.searchBar}>
+        <Feather
+          name="search"
+          size={18}
+          color={palette.gray400}
+          style={styles.searchIcon}
+        />
+        <TextInput
+          ref={inputRef}
+          style={styles.searchInput}
+          placeholder="Where from?"
+          placeholderTextColor={palette.gray400}
+          value={query}
+          onChangeText={(text) => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setQuery(text);
+          }}
+          selectionColor={palette.primary500}
+          returnKeyType="search"
+          autoCorrect={false}
+        />
+        {query.length > 0 && (
+          <Pressable
+            onPress={() => {
+              setQuery('');
+              inputRef.current?.focus();
+            }}
+            hitSlop={8}
+          >
+            <Feather name="x-circle" size={18} color={palette.gray400} />
+          </Pressable>
+        )}
+      </View>
+    </Sheet>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: { flex: 1 },
+
+  listContainer: { flex: 1, flexDirection: 'row' },
+  listContent: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  airportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.sm,
+  },
+  airportRowPressed: { backgroundColor: palette.gray50 },
+  rowSelected: { backgroundColor: palette.primary50 },
+  airportCity: {
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: '400',
+    color: palette.gray900,
+    flex: 1,
+  },
+  airportCityBold: {
+    fontWeight: '700',
+    color: palette.gray900,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: palette.gray400,
+    letterSpacing: 1,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+
+  scrubber: {
+    width: 22,
+    paddingTop: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrubberLetter: {
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '600',
+  },
+  scrubberActive: { color: palette.primary600 },
+  scrubberInactive: { color: palette.gray300 },
+
+  searchResults: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  didYouMean: {
+    marginBottom: spacing.sm,
+    letterSpacing: 0.5,
+  },
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.sm,
+  },
+  resultRowPressed: { backgroundColor: palette.gray50 },
+  noResults: {
+    paddingTop: spacing.xl,
+    gap: spacing.xs,
+  },
+
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    marginTop: spacing.sm,
+    backgroundColor: palette.gray50,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: palette.gray200,
+    paddingHorizontal: spacing.md,
+    minHeight: 52,
+  },
+  searchIcon: { marginRight: spacing.sm },
+  searchInput: {
+    flex: 1,
+    ...typography.body,
+    color: palette.gray900,
+    paddingVertical: spacing.sm,
+  },
+});

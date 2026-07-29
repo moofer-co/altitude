@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
 import { PickerSheet } from '../components/PickerSheet';
+import { AirportSearchSheet } from '../components/AirportSearchSheet';
 import {
   ProfileSheet,
   TravellerSheet,
@@ -14,6 +15,7 @@ import {
   TermsSheet,
   SignOutSheet,
 } from '../components/AccountSheets';
+import { LoyaltySheet, LoyaltySummary } from '../components/LoyaltySheets';
 import { palette, spacing, radii } from '../constants/tokens';
 import { useNow } from '../data/trip';
 import { airports } from '../data/airports';
@@ -38,6 +40,13 @@ import {
   type NotificationSetting,
   type PaymentMethod,
 } from '../data/account';
+import {
+  getLinkedLoyalty,
+  subscribeLoyalty,
+  upsertLinkedLoyalty,
+  unlinkLoyalty,
+  type LinkedLoyalty,
+} from '../data/loyalty';
 
 const HPAD = spacing.lg;
 
@@ -49,7 +58,11 @@ type SheetKind =
   | 'help'
   | 'terms'
   | 'signout'
+  | 'loyalty'
+  | 'homeAirport'
   | null;
+
+type PrefPickerKey = Exclude<PrefKey, 'homeAirport'>;
 
 export default function Account() {
   const now = useNow();
@@ -62,13 +75,16 @@ export default function Account() {
   const [prefs, setPrefs] = useState<Preferences>(initialPreferences);
   const [notifs, setNotifs] = useState<NotificationSetting[]>(initialNotifications);
   const [methods, setMethods] = useState<PaymentMethod[]>(initialPaymentMethods);
+  const [loyalty, setLoyalty] = useState<LinkedLoyalty[]>(getLinkedLoyalty);
+
+  useEffect(() => subscribeLoyalty(() => setLoyalty(getLinkedLoyalty())), []);
 
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [editTraveller, setEditTraveller] = useState<SavedTraveller | null>(null);
   const [addingTraveller, setAddingTraveller] = useState(false);
   const [editPayment, setEditPayment] = useState<PaymentMethod | null>(null);
   const [addingPayment, setAddingPayment] = useState(false);
-  const [prefPicker, setPrefPicker] = useState<PrefKey | null>(null);
+  const [prefPicker, setPrefPicker] = useState<PrefPickerKey | null>(null);
 
   const initials = profile.name
     .split(' ')
@@ -77,12 +93,6 @@ export default function Account() {
     .join('');
 
   const docsNeedingAttention = travellers.filter(documentNeedsAttention).length;
-
-  const airportOptions = useMemo(
-    () =>
-      [...new Set(airports.map((a) => a.iata))].sort((a, b) => a.localeCompare(b)),
-    [],
-  );
 
   const toggleNotif = (id: string) =>
     setNotifs((list) =>
@@ -291,6 +301,10 @@ export default function Account() {
           </Text>
         )}
 
+        {/* ── Loyalty ── */}
+        <SectionLabel text="Loyalty" />
+        <LoyaltySummary linked={loyalty} onPress={() => setSheet('loyalty')} />
+
         {/* ── Preferences ── */}
         <SectionLabel text="Travel preferences" />
         <View style={s.card}>
@@ -310,7 +324,7 @@ export default function Account() {
             icon="map-pin"
             label="Home airport"
             value={homeAirportLabel}
-            onPress={() => setPrefPicker('homeAirport')}
+            onPress={() => setSheet('homeAirport')}
           />
           <PrefRow
             icon="dollar-sign"
@@ -514,19 +528,38 @@ export default function Account() {
         }}
       />
 
+      <LoyaltySheet
+        visible={sheet === 'loyalty'}
+        linked={loyalty}
+        onClose={closeSheets}
+        onSave={(link) => {
+          upsertLinkedLoyalty(link);
+        }}
+        onUnlink={(programId) => {
+          unlinkLoyalty(programId);
+        }}
+      />
+
+      <AirportSearchSheet
+        visible={sheet === 'homeAirport'}
+        selectedIata={prefs.homeAirport}
+        title="Home airport"
+        subtitle="Same search as Find flights — pick your usual origin"
+        onClose={closeSheets}
+        onSelect={(airport) => {
+          setPrefs((p) => ({ ...p, homeAirport: airport.iata }));
+          closeSheets();
+        }}
+      />
+
       {prefPicker && (
         <PickerSheet
           visible
           title={PREF_META[prefPicker].label}
           options={
-            prefPicker === 'homeAirport'
-              ? airportOptions
-              : prefPicker === 'currency'
-                ? CURRENCIES
-                : PREF_META[prefPicker].options
+            prefPicker === 'currency' ? CURRENCIES : PREF_META[prefPicker].options
           }
           selected={prefs[prefPicker]}
-          searchable={prefPicker === 'homeAirport'}
           onClose={() => setPrefPicker(null)}
           onSelect={(v) => {
             setPrefs((p) => ({ ...p, [prefPicker]: v }));
