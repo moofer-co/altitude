@@ -9,7 +9,8 @@ export type PageSkeletonVariant =
   | 'saved'
   | 'account'
   | 'search'
-  | 'dates';
+  | 'dates'
+  | 'destinations';
 
 /** @deprecated Prefer PageSkeletonVariant — kept for existing tab imports. */
 export type TabSkeletonVariant = PageSkeletonVariant;
@@ -248,6 +249,34 @@ function Skeleton({
         {bone({ height: 44, borderRadius: radii.md, marginBottom: spacing.lg }, 'd1')}
         {bone({ height: 280, borderRadius: radii.lg, marginBottom: spacing.md }, 'cal')}
         {bone({ height: 52, borderRadius: radii.full, marginTop: spacing.lg }, 'cta')}
+      </View>
+    );
+  }
+
+  if (variant === 'destinations') {
+    return (
+      <View style={styles.pad}>
+        <View style={styles.row}>
+          {bone({ width: 44, height: 44, borderRadius: 22 }, 'back')}
+          {bone({ flex: 1, height: 44, borderRadius: 22, marginHorizontal: 8 }, 'title')}
+          {bone({ width: 44, height: 44, borderRadius: 22 }, 'search')}
+        </View>
+        <View style={[styles.row, { marginTop: spacing.lg, justifyContent: 'flex-start', gap: 20 }]}>
+          {bone({ width: 36, height: 18 }, 't1')}
+          {bone({ width: 110, height: 18 }, 't2')}
+          {bone({ width: 72, height: 18 }, 't3')}
+          {bone({ width: 64, height: 18 }, 't4')}
+        </View>
+        <View style={[styles.row, { marginTop: spacing.lg, alignItems: 'flex-start', gap: 12 }]}>
+          <View style={{ flex: 1, gap: 12 }}>
+            {bone({ height: 210, borderRadius: 22 }, 'c1')}
+            {bone({ height: 160, borderRadius: 22 }, 'c2')}
+          </View>
+          <View style={{ flex: 1, gap: 12 }}>
+            {bone({ height: 160, borderRadius: 22 }, 'c3')}
+            {bone({ height: 210, borderRadius: 22 }, 'c4')}
+          </View>
+        </View>
       </View>
     );
   }

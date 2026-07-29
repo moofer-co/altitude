@@ -318,6 +318,18 @@ export default function Home() {
               Below their usual price from {origin.iata}
             </Text>
           </View>
+          <Pressable
+            onPress={() =>
+              router.push({ pathname: '/destinations', params: { tab: 'all' } })
+            }
+            hitSlop={8}
+            accessibilityRole="link"
+            accessibilityLabel="View all good fares"
+          >
+            <Text variant="bodySmall" style={s.viewAll}>
+              View all
+            </Text>
+          </Pressable>
         </View>
 
         <ScrollView
@@ -368,6 +380,18 @@ export default function Home() {
               Close enough to leave Friday and be back Sunday
             </Text>
           </View>
+          <Pressable
+            onPress={() =>
+              router.push({ pathname: '/destinations', params: { tab: 'weekend' } })
+            }
+            hitSlop={8}
+            accessibilityRole="link"
+            accessibilityLabel="View all weekend escapes"
+          >
+            <Text variant="bodySmall" style={s.viewAll}>
+              View all
+            </Text>
+          </Pressable>
         </View>
 
         <View style={s.grid}>
@@ -600,6 +624,12 @@ const s = StyleSheet.create({
     alignItems: 'flex-end',
     marginTop: spacing.xl,
     marginBottom: spacing.md,
+    gap: spacing.md,
+  },
+  viewAll: {
+    color: palette.primary600,
+    fontWeight: '600',
+    marginBottom: 2,
   },
 
   // Deals
