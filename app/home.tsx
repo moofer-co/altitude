@@ -15,9 +15,15 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
-import { palette, spacing, radii } from '../constants/tokens';
+import { palette, spacing, radii, shadows } from '../constants/tokens';
 import { LocationSheet } from '../components/LocationSheet';
 import { DestinationSheet } from '../components/DestinationSheet';
+import { PaxSheet } from '../components/PaxSheet';
+import {
+  SearchMorphOverlay,
+  type SearchBarRect,
+} from '../components/SearchMorphOverlay';
+import { defaultPax, type PaxMix } from '../lib/flightRules';
 import {
   weekendEscapes,
   dealsNow,
@@ -82,10 +88,38 @@ export default function Home() {
   const [locationOpen, setLocationOpen] = useState(false);
   const [destination, setDestination] = useState<Destination | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pax, setPax] = useState<PaxMix>(defaultPax);
+  const [paxOpen, setPaxOpen] = useState(false);
+  const [morphFrom, setMorphFrom] = useState<SearchBarRect | null>(null);
+  const [morphing, setMorphing] = useState(false);
 
   const pinned = useRef(new Animated.Value(0)).current;
   const isPinned = useRef(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchBarRef = useRef<View>(null);
+  const morphLock = useRef(false);
+
+  const openAirportSearch = useCallback(() => {
+    if (morphLock.current) return;
+    morphLock.current = true;
+    searchBarRef.current?.measureInWindow((x, y, width, height) => {
+      setMorphFrom({ x, y, width, height });
+      setMorphing(true);
+    });
+  }, []);
+
+  const onMorphNavigate = useCallback(() => {
+    router.push('/airport-search');
+  }, [router]);
+
+  const onMorphFinished = useCallback(() => {
+    setMorphing(false);
+    setMorphFrom(null);
+    // Allow a fresh morph after the destination screen has settled
+    requestAnimationFrame(() => {
+      morphLock.current = false;
+    });
+  }, []);
 
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -189,16 +223,44 @@ export default function Home() {
           Where are you{'\n'}flying next?
         </Text>
 
-        {/* ── Search: the one primary action ── */}
-        <Pressable style={s.search} onPress={() => router.push('/airport-search')}>
-          <Feather name="search" size={20} color={palette.gray400} />
-          <Text variant="body" color="textTertiary" style={{ flex: 1 }}>
-            Search a city or airport
-          </Text>
-          <View style={s.searchGo}>
+        {/* ── Search: passenger + field are separate targets ── */}
+        <View
+          ref={searchBarRef}
+          collapsable={false}
+          style={[s.search, morphing && s.searchHidden]}
+        >
+          <Pressable
+            style={s.searchPax}
+            onPress={() => setPaxOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Travellers"
+            hitSlop={4}
+          >
+            <Feather name="user" size={18} color={palette.primary500} />
+          </Pressable>
+
+          <Pressable
+            style={s.searchField}
+            onPress={openAirportSearch}
+            accessibilityRole="button"
+            accessibilityLabel="Search airports"
+          >
+            <Feather name="search" size={18} color={palette.gray400} />
+            <Text variant="body" color="textTertiary" style={{ flex: 1 }}>
+              Where to next?
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={s.searchGo}
+            onPress={openAirportSearch}
+            accessibilityRole="button"
+            accessibilityLabel="Go to airport search"
+            hitSlop={4}
+          >
             <Feather name="arrow-right" size={18} color={palette.white} />
-          </View>
-        </Pressable>
+          </Pressable>
+        </View>
 
         {/* ── Deals ── */}
         <View style={s.sectionHead}>
@@ -328,6 +390,23 @@ export default function Home() {
           router.push('/flights');
         }}
       />
+
+      <PaxSheet
+        visible={paxOpen}
+        pax={pax}
+        onClose={() => setPaxOpen(false)}
+        onApply={(next) => {
+          setPax(next);
+          setPaxOpen(false);
+        }}
+      />
+
+      <SearchMorphOverlay
+        visible={morphing}
+        from={morphFrom}
+        onNavigate={onMorphNavigate}
+        onFinished={onMorphFinished}
+      />
     </SafeAreaView>
   );
 }
@@ -432,22 +511,51 @@ const s = StyleSheet.create({
 
   hero: { marginTop: spacing.lg, marginBottom: spacing.xl },
 
-  // Search
+  // Search — premium pill with two independent hit targets
   search: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: palette.white,
+    borderRadius: radii.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: palette.gray200,
+    paddingLeft: 6,
+    paddingRight: 6,
+    paddingVertical: 6,
+    minHeight: 58,
+    ...shadows.floating,
+  },
+  searchHidden: {
+    opacity: 0,
+  },
+  searchPax: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: palette.white,
+    borderWidth: 1.5,
+    borderColor: palette.primary200,
+    shadowColor: palette.primary500,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  searchField: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: palette.gray50,
-    borderRadius: radii.xl,
-    paddingLeft: spacing.md,
-    paddingRight: spacing.xs,
-    paddingVertical: spacing.xs,
-    minHeight: 60,
+    paddingHorizontal: spacing.xs,
+    minHeight: 44,
   },
   searchGo: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: palette.primary500,
     alignItems: 'center',
     justifyContent: 'center',

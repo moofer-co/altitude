@@ -7,6 +7,8 @@ import {
   StyleSheet,
   Keyboard,
   LayoutAnimation,
+  Animated,
+  Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -55,8 +57,23 @@ export default function AirportSearch() {
   const [prefs, setPrefs] = useState(getPreferences);
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<SectionList<Airport>>(null);
+  const enter = useRef(new Animated.Value(0)).current;
 
   useEffect(() => subscribePreferences(() => setPrefs(getPreferences())), []);
+
+  useEffect(() => {
+    Animated.timing(enter, {
+      toValue: 1,
+      duration: 340,
+      delay: 40,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+
+    // Focus after the morph veil clears — avoids keyboard fighting the transition
+    const focusAt = setTimeout(() => inputRef.current?.focus(), 380);
+    return () => clearTimeout(focusAt);
+  }, [enter]);
 
   const homeAirport = useMemo(() => {
     return (
@@ -107,32 +124,46 @@ export default function AirportSearch() {
     ? `${homeAirport.city}, ${homeAirport.country}`
     : prefs.homeAirport;
 
+  const contentStyle = {
+    opacity: enter,
+    transform: [
+      {
+        translateY: enter.interpolate({
+          inputRange: [0, 1],
+          outputRange: [10, 0],
+        }),
+      },
+    ],
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <Row justify="space-between" style={styles.header}>
-        <Pressable
-          style={styles.locationPill}
-          onPress={() => {
-            Keyboard.dismiss();
-            setHomeOpen(true);
-          }}
-        >
-          <Feather name="map-pin" size={14} color={palette.primary600} />
-          <Text variant="bodySmall" numberOfLines={1} style={styles.locationText}>
-            {homeLabel}
-          </Text>
-          <Feather name="chevron-down" size={14} color={palette.gray500} />
-        </Pressable>
-        <Pressable
-          style={styles.closeBtn}
-          onPress={() => {
-            if (router.canGoBack()) router.back();
-          }}
-          hitSlop={6}
-        >
-          <Feather name="x" size={20} color={palette.gray600} />
-        </Pressable>
-      </Row>
+      <Animated.View style={contentStyle}>
+        <Row justify="space-between" style={styles.header}>
+          <Pressable
+            style={styles.locationPill}
+            onPress={() => {
+              Keyboard.dismiss();
+              setHomeOpen(true);
+            }}
+          >
+            <Feather name="map-pin" size={14} color={palette.primary600} />
+            <Text variant="bodySmall" numberOfLines={1} style={styles.locationText}>
+              {homeLabel}
+            </Text>
+            <Feather name="chevron-down" size={14} color={palette.gray500} />
+          </Pressable>
+          <Pressable
+            style={styles.closeBtn}
+            onPress={() => {
+              if (router.canGoBack()) router.back();
+            }}
+            hitSlop={6}
+          >
+            <Feather name="x" size={20} color={palette.gray600} />
+          </Pressable>
+        </Row>
+      </Animated.View>
 
       {selected && (
         <View style={styles.selectedBanner}>
@@ -142,7 +173,7 @@ export default function AirportSearch() {
         </View>
       )}
 
-      <View style={styles.content}>
+      <Animated.View style={[styles.content, contentStyle]}>
         {isSearching ? (
           <View style={styles.searchResults}>
             {searchResults.length > 0 ? (
@@ -215,35 +246,37 @@ export default function AirportSearch() {
             />
           </View>
         )}
-      </View>
+      </Animated.View>
 
-      <View style={styles.searchBar}>
-        <Feather
-          name="search"
-          size={18}
-          color={palette.gray400}
-          style={styles.searchIcon}
-        />
-        <TextInput
-          ref={inputRef}
-          style={styles.searchInput}
-          placeholder="Where to next?"
-          placeholderTextColor={palette.gray400}
-          value={query}
-          onChangeText={(text) => {
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            setQuery(text);
-          }}
-          selectionColor={palette.primary500}
-          autoFocus
-          returnKeyType="search"
-        />
-        {query.length > 0 && (
-          <Pressable onPress={handleClear} hitSlop={8}>
-            <Feather name="x-circle" size={18} color={palette.gray400} />
-          </Pressable>
-        )}
-      </View>
+      <Animated.View style={contentStyle}>
+        <View style={styles.searchBar}>
+          <Feather
+            name="search"
+            size={18}
+            color={palette.gray400}
+            style={styles.searchIcon}
+          />
+          <TextInput
+            ref={inputRef}
+            style={styles.searchInput}
+            placeholder="Where to next?"
+            placeholderTextColor={palette.gray400}
+            value={query}
+            onChangeText={(text) => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setQuery(text);
+            }}
+            selectionColor={palette.primary500}
+            autoFocus={false}
+            returnKeyType="search"
+          />
+          {query.length > 0 && (
+            <Pressable onPress={handleClear} hitSlop={8}>
+              <Feather name="x-circle" size={18} color={palette.gray400} />
+            </Pressable>
+          )}
+        </View>
+      </Animated.View>
 
       <AirportSearchSheet
         visible={homeOpen}

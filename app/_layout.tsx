@@ -13,7 +13,16 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: colors.bg },
           animation: 'slide_from_right',
         }}
-      />
+      >
+        {/* Fade pairs with the home search morph — no slide jitter */}
+        <Stack.Screen
+          name="airport-search"
+          options={{
+            animation: 'fade',
+            animationDuration: 280,
+          }}
+        />
+      </Stack>
     </SafeAreaProvider>
   );
 }
