@@ -36,8 +36,39 @@ export const initialProfile: Profile = {
   memberSince: '2024',
 };
 
-/** @deprecated Use initialProfile + local state. Kept for import compatibility. */
+/** @deprecated Use initialProfile + getProfile(). */
 export const profile = initialProfile;
+
+// Shared profile store (Account hub + child pages)
+let profileStore: Profile = { ...initialProfile };
+const profileListeners = new Set<() => void>();
+
+function notifyProfile() {
+  profileListeners.forEach((l) => l());
+}
+
+export function getProfile(): Profile {
+  return { ...profileStore };
+}
+
+export function setProfile(next: Profile) {
+  profileStore = { ...next };
+  notifyProfile();
+}
+
+export function updateProfile(partial: Partial<Profile>): Profile {
+  profileStore = { ...profileStore, ...partial };
+  notifyProfile();
+  return getProfile();
+}
+
+export function subscribeProfile(listener: () => void): () => void {
+  profileListeners.add(listener);
+  return () => {
+    profileListeners.delete(listener);
+  };
+}
+
 
 export interface ProfileErrors {
   name?: string;
@@ -137,8 +168,45 @@ export const initialTravellers: SavedTraveller[] = [
   },
 ];
 
-/** @deprecated Use initialTravellers + local state. */
+/** @deprecated Use getTravellers(). */
 export const savedTravellers = initialTravellers;
+
+// Shared travellers store
+let travellersStore: SavedTraveller[] = initialTravellers.map((t) => ({ ...t }));
+const travellersListeners = new Set<() => void>();
+
+function notifyTravellers() {
+  travellersListeners.forEach((l) => l());
+}
+
+export function getTravellers(): SavedTraveller[] {
+  return travellersStore.map((t) => ({ ...t }));
+}
+
+export function setTravellers(next: SavedTraveller[]) {
+  travellersStore = next.map((t) => ({ ...t }));
+  notifyTravellers();
+}
+
+export function upsertTraveller(t: SavedTraveller) {
+  const i = travellersStore.findIndex((x) => x.id === t.id);
+  if (i === -1) travellersStore = [...travellersStore, { ...t }];
+  else travellersStore = travellersStore.map((x) => (x.id === t.id ? { ...t } : x));
+  notifyTravellers();
+}
+
+export function removeTraveller(id: string) {
+  travellersStore = travellersStore.filter((t) => t.id !== id);
+  notifyTravellers();
+}
+
+export function subscribeTravellers(listener: () => void): () => void {
+  travellersListeners.add(listener);
+  return () => {
+    travellersListeners.delete(listener);
+  };
+}
+
 
 export const RELATIONSHIPS = [
   'Spouse',
@@ -298,6 +366,29 @@ export function formatAddressLine(a: SavedAddress): string {
   return parts.join(', ') || 'Add a billing or delivery address';
 }
 
+let addressStore: SavedAddress = { ...initialSavedAddress };
+const addressListeners = new Set<() => void>();
+
+function notifyAddress() {
+  addressListeners.forEach((l) => l());
+}
+
+export function getSavedAddress(): SavedAddress {
+  return { ...addressStore };
+}
+
+export function setSavedAddress(next: SavedAddress) {
+  addressStore = { ...next };
+  notifyAddress();
+}
+
+export function subscribeSavedAddress(listener: () => void): () => void {
+  addressListeners.add(listener);
+  return () => {
+    addressListeners.delete(listener);
+  };
+}
+
 /** @deprecated Use getPreferences() — kept for import compatibility. */
 export const preferences = initialPreferences;
 
@@ -391,8 +482,41 @@ export const initialNotifications: NotificationSetting[] = [
   },
 ];
 
-/** @deprecated Use initialNotifications + local state. */
+/** @deprecated Use getNotifications(). */
 export const notificationSettings = initialNotifications;
+
+let notificationsStore: NotificationSetting[] = initialNotifications.map((n) => ({
+  ...n,
+}));
+const notificationsListeners = new Set<() => void>();
+
+function notifyNotifications() {
+  notificationsListeners.forEach((l) => l());
+}
+
+export function getNotifications(): NotificationSetting[] {
+  return notificationsStore.map((n) => ({ ...n }));
+}
+
+export function setNotifications(next: NotificationSetting[]) {
+  notificationsStore = next.map((n) => ({ ...n }));
+  notifyNotifications();
+}
+
+export function toggleNotification(id: string) {
+  notificationsStore = notificationsStore.map((n) =>
+    n.id === id ? { ...n, enabled: !n.enabled } : n,
+  );
+  notifyNotifications();
+}
+
+export function subscribeNotifications(listener: () => void): () => void {
+  notificationsListeners.add(listener);
+  return () => {
+    notificationsListeners.delete(listener);
+  };
+}
+
 
 // ─── Payment methods ─────────────────────────────────────
 
@@ -429,8 +553,63 @@ export const initialPaymentMethods: PaymentMethod[] = [
   },
 ];
 
-/** @deprecated Use initialPaymentMethods + local state. */
+/** @deprecated Use getPaymentMethods(). */
 export const paymentMethods = initialPaymentMethods;
+
+let paymentsStore: PaymentMethod[] = initialPaymentMethods.map((m) => ({ ...m }));
+const paymentsListeners = new Set<() => void>();
+
+function notifyPayments() {
+  paymentsListeners.forEach((l) => l());
+}
+
+export function getPaymentMethods(): PaymentMethod[] {
+  return paymentsStore.map((m) => ({ ...m }));
+}
+
+export function setPaymentMethods(next: PaymentMethod[]) {
+  paymentsStore = next.map((m) => ({ ...m }));
+  notifyPayments();
+}
+
+export function upsertPaymentMethod(pm: PaymentMethod) {
+  const normalised = { ...pm, detail: paymentMethodDetail(pm) };
+  const i = paymentsStore.findIndex((x) => x.id === normalised.id);
+  if (i === -1) {
+    paymentsStore = [...paymentsStore, normalised];
+    if (normalised.primary) {
+      paymentsStore = withPrimary(paymentsStore, normalised.id);
+    }
+  } else {
+    paymentsStore = paymentsStore.map((x) =>
+      x.id === normalised.id ? normalised : x,
+    );
+  }
+  notifyPayments();
+}
+
+export function removePaymentMethod(id: string) {
+  if (paymentsStore.length <= 1) return;
+  let next = paymentsStore.filter((m) => m.id !== id);
+  if (!next.some((m) => m.primary) && next[0]) {
+    next = withPrimary(next, next[0].id);
+  }
+  paymentsStore = next;
+  notifyPayments();
+}
+
+export function setPrimaryPaymentMethod(id: string) {
+  paymentsStore = withPrimary(paymentsStore, id);
+  notifyPayments();
+}
+
+export function subscribePaymentMethods(listener: () => void): () => void {
+  paymentsListeners.add(listener);
+  return () => {
+    paymentsListeners.delete(listener);
+  };
+}
+
 
 export function emptyPaymentMethod(kind: 'upi' | 'card'): PaymentMethod {
   return {
