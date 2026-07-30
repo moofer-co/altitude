@@ -12,7 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from './ui';
-import { palette, spacing, radii, shadows } from '../constants/tokens';
+import { layout, palette, spacing, radii, shadows } from '../constants/tokens';
 import type { MockFlight } from '../data/flights';
 import {
   getFareClasses,
@@ -25,7 +25,7 @@ import {
 } from '../data/fares';
 
 const { height: SH } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
 const SHEET_H = SH * 0.9;
 const SNAP_FULL = 0;
@@ -562,7 +562,7 @@ export function FareSheet({
   flight: MockFlight | null;
   visible: boolean;
   onClose: () => void;
-  onConfirm: (fareName: string, price: number) => void;
+  onConfirm: (fare: FareClass) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<ViewMode>('cards');
@@ -784,9 +784,7 @@ export function FareSheet({
             <Pressable
               style={[s.confirm, !selectedFare && s.confirmOff]}
               disabled={!selectedFare}
-              onPress={() =>
-                selectedFare && onConfirm(selectedFare.name, selectedFare.price)
-              }
+              onPress={() => selectedFare && onConfirm(selectedFare)}
             >
               <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
                 Continue

@@ -7,20 +7,22 @@ import {
   Modal,
   Animated,
   PanResponder,
+  Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from './Text';
-import { palette, spacing, radii, shadows } from '../../constants/tokens';
+import { layout, palette, spacing, radii, shadows } from '../../constants/tokens';
+import { useKeyboardLift } from '../../hooks/useKeyboardLift';
 
 const { height: SH } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
 /**
  * Bottom sheet with drag-to-dismiss.
  *
- * The drag handler lives on the header only — putting it on the whole sheet
- * fights any scrollable content inside.
+ * When the keyboard opens the entire sheet is padded above it so footers
+ * (Save, Pay, Continue, etc.) and focused fields stay visible.
  */
 export function Sheet({
   visible,
@@ -42,8 +44,15 @@ export function Sheet({
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
+  const keyboardLift = useKeyboardLift();
   const height = SH * heightRatio;
   const translateY = useRef(new Animated.Value(height)).current;
+
+  // Available height above the keyboard
+  const sheetHeight = Math.min(
+    height + insets.bottom,
+    Math.max(240, SH - keyboardLift),
+  );
 
   useEffect(() => {
     if (visible) {
@@ -55,10 +64,12 @@ export function Sheet({
       }).start();
     } else {
       translateY.setValue(height);
+      Keyboard.dismiss();
     }
   }, [visible, translateY, height]);
 
   const dismiss = useCallback(() => {
+    Keyboard.dismiss();
     Animated.timing(translateY, {
       toValue: height,
       duration: 220,
@@ -95,13 +106,21 @@ export function Sheet({
       animationType="fade"
       onRequestClose={dismiss}
     >
-      <View style={s.overlay}>
+      {/*
+        Plain View + paddingBottom (both platforms).
+        Do NOT mix KeyboardAvoidingView here — it double-counts on iOS and
+        is unreliable inside Android Modals with edge-to-edge.
+      */}
+      <View style={[s.overlay, keyboardLift > 0 && { paddingBottom: keyboardLift }]}>
         <Pressable style={s.backdrop} onPress={dismiss} />
 
         <Animated.View
           style={[
             s.sheet,
-            { height: height + insets.bottom, transform: [{ translateY }] },
+            {
+              height: sheetHeight,
+              transform: [{ translateY }],
+            },
           ]}
         >
           <View {...pan.panHandlers} style={s.head}>
@@ -125,7 +144,15 @@ export function Sheet({
           <View style={{ flex: 1 }}>{children}</View>
 
           {footer && (
-            <View style={[s.footer, { paddingBottom: insets.bottom + spacing.md }]}>
+            <View
+              style={[
+                s.footer,
+                {
+                  paddingBottom:
+                    keyboardLift > 0 ? spacing.md : insets.bottom + spacing.md,
+                },
+              ]}
+            >
               {footer}
             </View>
           )}
@@ -136,7 +163,10 @@ export function Sheet({
 }
 
 const s = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
+  overlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
   backdrop: {
     position: 'absolute',
     top: 0,

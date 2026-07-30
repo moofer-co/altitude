@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { View, ScrollView, Pressable, StyleSheet, Dimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
-import { palette, spacing, radii } from '../constants/tokens';
+import { layout, palette, spacing, radii } from '../constants/tokens';
 import {
   SEAT_ROWS,
   SEAT_LETTERS,
@@ -13,7 +13,7 @@ import {
 } from '../data/booking';
 
 const { width: SW } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
 const SEAT = 38;
 const GAP = 5;
@@ -26,11 +26,14 @@ export function SeatSheet({
   passengers,
   onClose,
   onApply,
+  complimentary = false,
 }: {
   visible: boolean;
   passengers: Passenger[];
   onClose: () => void;
   onApply: (next: Passenger[]) => void;
+  /** Premium / flex fares — seats are free */
+  complimentary?: boolean;
 }) {
   const [draft, setDraft] = useState<Passenger[]>(passengers);
   const [active, setActive] = useState(0);
@@ -54,7 +57,10 @@ export function SeatSheet({
   }, [draft]);
 
   const current = draft[active];
-  const total = draft.reduce((sum, p) => sum + seatPrice(p.seat), 0);
+  const total = draft.reduce(
+    (sum, p) => sum + seatPrice(p.seat, complimentary),
+    0,
+  );
   const seated = draft.filter((p) => p.seat).length;
 
   if (!current) {
@@ -103,7 +109,11 @@ export function SeatSheet({
       visible={visible}
       onClose={onClose}
       title="Choose seats"
-      subtitle="Optional — we will assign seats free at check-in"
+      subtitle={
+        complimentary
+          ? 'Complimentary with your fare — pick now or after booking'
+          : 'Optional — we will assign seats free at check-in'
+      }
       heightRatio={0.9}
       headerAccessory={
         <ScrollView
@@ -152,7 +162,11 @@ export function SeatSheet({
               {seated} of {draft.length} seated
             </Text>
             <Text variant="bodyMedium">
-              {total === 0 ? 'No charge' : `₹${total.toLocaleString()}`}
+              {complimentary
+                ? 'Complimentary'
+                : total === 0
+                  ? 'No charge'
+                  : `₹${total.toLocaleString()}`}
             </Text>
           </View>
           <Pressable style={s.done} onPress={() => onApply(draft)}>
@@ -202,7 +216,8 @@ export function SeatSheet({
                 <View style={s.zoneTag}>
                   <Feather name="maximize-2" size={11} color={palette.successDark} />
                   <Text variant="caption" style={{ color: palette.successDark }}>
-                    {zone.label} · ₹{zone.price.toLocaleString()}
+                    {zone.label}
+                    {complimentary ? ' · Complimentary' : ` · ₹${zone.price.toLocaleString()}`}
                   </Text>
                 </View>
               )}

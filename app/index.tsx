@@ -2,17 +2,25 @@ import { View, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, ListRow, Divider } from '../components/ui';
-import { colors, spacing, palette } from '../constants/tokens';
+import { layout, colors, spacing, palette } from '../constants/tokens';
 
 const screens = [
   { route: '/onboarding', label: 'Onboarding', status: 'built' },
+  { route: '/sign-in', label: 'Sign in', status: 'built' },
+  { route: '/register', label: 'Register', status: 'built' },
+  { route: '/setup', label: 'New user setup', status: 'built' },
   { route: '/home', label: 'Home', status: 'built' },
+  { route: '/destinations', label: 'Destinations', status: 'built' },
+  { route: '/saved', label: 'Saved / Favourites', status: 'built' },
   { route: '/airport-search', label: 'Airport search', status: 'built' },
+  { route: '/multi-city', label: 'Multi-city', status: 'built' },
+  { route: '/flights-multi', label: 'Multi-city / round-trip flights', status: 'built' },
   { route: '/date-select', label: 'Date selection', status: 'built' },
   { route: '/flights', label: 'Flight recommendations', status: 'built' },
   { route: '/booking', label: 'Booking', status: 'built' },
   { route: '/itinerary', label: 'Itinerary', status: 'built' },
   { route: '/trips', label: 'Trips', status: 'built' },
+  { route: '/offers', label: 'Offers', status: 'built' },
   { route: '/account', label: 'Account', status: 'built' },
 ] as const;
 
@@ -68,7 +76,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   scroll: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
   },
   header: {
     paddingTop: spacing.xl,

@@ -174,6 +174,94 @@ export const destinations: Destination[] = [
     ),
     weekendable: true,
   },
+  {
+    id: 'amritsar',
+    city: 'Amritsar',
+    country: 'India',
+    iata: 'ATQ',
+    tagline: 'Golden light on the water',
+    image:
+      'https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=800&h=1000&fit=crop',
+    flightMinutes: 70,
+    direct: true,
+    fromPrice: 3100,
+    typicalPrice: 4800,
+    bestMonths: ['Oct', 'Nov', 'Feb', 'Mar'],
+    seasonNote: 'Cool winters are ideal for the Golden Temple and Wagah.',
+    reasons: [
+      'Under 90 minutes from Delhi',
+      'Easy Friday–Sunday loop',
+      'Strong midweek fare dips',
+    ],
+    prices: series(3100, [1.1, 1.05, 0.95, 0.85, 0.8, 0.75, 0.78, 0.85, 0.95, 1.15, 1.25, 1.2]),
+    weekendable: true,
+  },
+  {
+    id: 'jaisalmer',
+    city: 'Jaisalmer',
+    country: 'India',
+    iata: 'JSA',
+    tagline: 'Desert dusk on the dunes',
+    image:
+      'https://images.unsplash.com/photo-1548013146-72479768bada?w=800&h=1000&fit=crop',
+    flightMinutes: 95,
+    direct: true,
+    fromPrice: 5200,
+    typicalPrice: 7800,
+    bestMonths: ['Nov', 'Dec', 'Jan', 'Feb'],
+    seasonNote: 'Winter nights are cool; summers are extreme.',
+    reasons: [
+      'Fort town and dunes in one weekend',
+      'Direct connections keep it simple',
+      'Shoulder months cut fares sharply',
+    ],
+    prices: series(5200, [1.2, 1.1, 0.95, 0.85, 0.75, 0.7, 0.72, 0.8, 0.9, 1.1, 1.3, 1.35]),
+    weekendable: true,
+  },
+  {
+    id: 'pokhara',
+    city: 'Pokhara',
+    country: 'Nepal',
+    iata: 'PKR',
+    tagline: 'Lakes and paragliders',
+    image:
+      'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&h=1000&fit=crop',
+    flightMinutes: 135,
+    direct: true,
+    fromPrice: 8900,
+    typicalPrice: 12500,
+    bestMonths: ['Oct', 'Nov', 'Mar', 'Apr'],
+    seasonNote: 'Clear mountain views after monsoon through spring.',
+    reasons: [
+      'Short hop with big scenery',
+      'Ideal long weekend',
+      'Fares soften outside peak trek season',
+    ],
+    prices: series(8900, [1.05, 1.0, 1.1, 1.15, 0.95, 0.85, 0.8, 0.85, 0.95, 1.2, 1.15, 1.05]),
+    weekendable: true,
+  },
+  {
+    id: 'singapore',
+    city: 'Singapore',
+    country: 'Singapore',
+    iata: 'SIN',
+    tagline: 'Gardens after dark',
+    image:
+      'https://images.unsplash.com/photo-1525625293386-3f8f99389edd?w=800&h=1000&fit=crop',
+    flightMinutes: 330,
+    direct: true,
+    fromPrice: 15600,
+    typicalPrice: 21000,
+    bestMonths: ['Feb', 'Mar', 'Sep', 'Oct'],
+    seasonNote: 'Tropical year-round; shoulder months are quieter.',
+    reasons: [
+      'Reliable direct schedule',
+      'Visa-free for short stays',
+      'Competitive fares outside school holidays',
+    ],
+    prices: series(15600, [1.2, 1.05, 0.95, 0.9, 1.0, 1.15, 1.25, 1.2, 0.95, 0.92, 1.1, 1.3]),
+    weekendable: false,
+  },
 ];
 
 export const weekendEscapes = destinations.filter((d) => d.weekendable);
@@ -184,6 +272,59 @@ export const dealsNow = [...destinations]
   .filter((x) => x.saving > 0)
   .sort((a, b) => b.saving / b.dest.typicalPrice - a.saving / a.dest.typicalPrice)
   .slice(0, 4);
+
+export type DestinationTab = 'all' | 'weekend' | 'trending' | 'nearby';
+
+export function discountPercent(d: Destination): number {
+  if (d.typicalPrice <= 0) return 0;
+  return Math.max(0, Math.round(((d.typicalPrice - d.fromPrice) / d.typicalPrice) * 100));
+}
+
+/** Short-haul / regional options — easy from a typical India home base. */
+export function nearbyDestinations(list: Destination[] = destinations): Destination[] {
+  return list
+    .filter((d) => d.flightMinutes <= 210 || d.country === 'India' || d.country === 'Nepal')
+    .sort((a, b) => a.flightMinutes - b.flightMinutes);
+}
+
+/** Strongest discounts right now. */
+export function trendingDestinations(list: Destination[] = destinations): Destination[] {
+  return [...list]
+    .filter((d) => discountPercent(d) >= 18)
+    .sort((a, b) => discountPercent(b) - discountPercent(a));
+}
+
+export function destinationsForTab(
+  tab: DestinationTab,
+  list: Destination[] = destinations,
+): Destination[] {
+  switch (tab) {
+    case 'weekend':
+      return list.filter((d) => d.weekendable);
+    case 'trending':
+      return trendingDestinations(list);
+    case 'nearby':
+      return nearbyDestinations(list);
+    case 'all':
+    default:
+      return [...list].sort((a, b) => discountPercent(b) - discountPercent(a));
+  }
+}
+
+export function filterDestinations(
+  list: Destination[],
+  query: string,
+): Destination[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return list;
+  return list.filter(
+    (d) =>
+      d.city.toLowerCase().includes(q) ||
+      d.country.toLowerCase().includes(q) ||
+      d.iata.toLowerCase().includes(q) ||
+      d.tagline.toLowerCase().includes(q),
+  );
+}
 
 // ─── Origin airports ─────────────────────────────────────
 

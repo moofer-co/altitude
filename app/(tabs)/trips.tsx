@@ -3,8 +3,9 @@ import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { Text, Plane } from '../components/ui';
-import { palette, spacing, radii, shadows } from '../constants/tokens';
+import { Text, Plane } from '../../components/ui';
+import { TabScreenEnter } from '../../components/TabScreenEnter';
+import { layout, palette, spacing, radii, shadows } from '../../constants/tokens';
 import {
   allTrips,
   groupTrips,
@@ -12,7 +13,7 @@ import {
   routeString,
   tripsNeedingAttention,
   type NextAction,
-} from '../data/trips';
+} from '../../data/trips';
 import {
   tripStatus,
   STATUS_META,
@@ -21,9 +22,9 @@ import {
   countdownTo,
   useNow,
   type Trip,
-} from '../data/trip';
+} from '../../data/trip';
 
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
 const URGENCY = {
   now: { bg: palette.primary500, fg: palette.white, sub: 'rgba(255,255,255,0.85)' },
@@ -54,10 +55,8 @@ export default function Trips() {
     return ranked[0] ?? null;
   }, [now]);
 
-  const goTo = (trip: Trip, action: NextAction) => {
-    // Every trip currently routes to the one itinerary screen; a real build
-    // would pass the PNR. The target tells it which sheet to open on arrival.
-    router.push('/itinerary');
+  const goTo = (trip: Trip, _action: NextAction) => {
+    router.push({ pathname: '/itinerary', params: { pnr: trip.pnr } });
   };
 
   const empty =
@@ -67,6 +66,7 @@ export default function Trips() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <TabScreenEnter variant="trips" backgroundColor={palette.gray50}>
       <View style={s.header}>
         <View style={{ flex: 1 }}>
           <Text variant="h1">Trips</Text>
@@ -154,6 +154,7 @@ export default function Trips() {
 
         <View style={{ height: spacing.xl }} />
       </ScrollView>
+      </TabScreenEnter>
     </SafeAreaView>
   );
 }

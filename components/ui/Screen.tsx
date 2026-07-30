@@ -1,6 +1,6 @@
 import { View, StyleSheet, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing } from '../../constants/tokens';
+import { layout, colors, spacing } from '../../constants/tokens';
 
 interface ScreenProps {
   /** Content anchors to bottom by default (thumb-first). Set 'top' for scrollable lists. */
@@ -38,7 +38,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
   },
   anchorBottom: {
     justifyContent: 'flex-end',

@@ -13,6 +13,7 @@ import {
   type PaxMix,
   type Advisory,
 } from '../lib/flightRules';
+import { FlightAmenities } from './FlightAmenities';
 
 const LEVEL_STYLE = {
   info: { bg: palette.infoLight, fg: palette.infoDark },
@@ -30,6 +31,7 @@ export function FlightCard({
   onToggleExpand,
   onToggleCheck,
   onSelectFare,
+  selectLabel = 'Select fare',
 }: {
   flight: MockFlight;
   pax: PaxMix;
@@ -40,6 +42,8 @@ export function FlightCard({
   onToggleExpand: () => void;
   onToggleCheck: () => void;
   onSelectFare: () => void;
+  /** CTA copy — e.g. "Select flight" on multi-city results */
+  selectLabel?: string;
 }) {
   const avail = availability(flight, pax);
   const advisories = advisoriesFor(flight, pax);
@@ -191,6 +195,7 @@ export function FlightCard({
             advisories={advisories}
             blocked={blocked}
             fareName={best?.fare.name ?? 'Economy'}
+            selectLabel={selectLabel}
             onSelectFare={onSelectFare}
             onCollapse={onToggleExpand}
           />
@@ -221,7 +226,7 @@ export function FlightCard({
                 variant="caption"
                 style={{ color: palette.white, fontWeight: '600' }}
               >
-                {blocked ? 'Unavailable' : 'Select fare'}
+                {blocked ? 'Unavailable' : selectLabel}
               </Text>
             </Pressable>
           </View>
@@ -239,6 +244,7 @@ function ExpandedBand({
   advisories,
   blocked,
   fareName,
+  selectLabel,
   onSelectFare,
   onCollapse,
 }: {
@@ -247,6 +253,7 @@ function ExpandedBand({
   advisories: Advisory[];
   blocked: boolean;
   fareName: string;
+  selectLabel: string;
   onSelectFare: () => void;
   onCollapse: () => void;
 }) {
@@ -350,10 +357,11 @@ function ExpandedBand({
         </View>
       )}
 
-      {/* Inclusions */}
+      <View style={{ marginTop: spacing.sm }}>
+        <FlightAmenities flight={flight} />
+      </View>
+
       <View style={s.rows}>
-        <DetailRow icon="briefcase" label="Baggage" value={flight.baggage} />
-        <DetailRow icon="coffee" label="Meal" value={flight.meal} />
         <DetailRow icon="x-circle" label="Cancellation" value={flight.cancellation} />
         <DetailRow icon="maximize-2" label="Seat pitch" value={flight.seatPitch} />
       </View>
@@ -364,7 +372,7 @@ function ExpandedBand({
         disabled={blocked}
       >
         <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
-          {blocked ? 'Not enough seats' : 'Select fare'}
+          {blocked ? 'Not enough seats' : selectLabel}
         </Text>
       </Pressable>
 

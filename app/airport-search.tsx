@@ -1,60 +1,31 @@
-import { useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   TextInput,
-  SectionList,
   Pressable,
   StyleSheet,
   Keyboard,
   LayoutAnimation,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text, Row } from '../components/ui';
-import { colors, palette, spacing, radii, typography } from '../constants/tokens';
-import { allAirports } from '../data/airports';
+import { AirportAlphabetList } from '../components/AirportAlphabetList';
+import { AirportSearchSheet } from '../components/AirportSearchSheet';
+import { KeyboardBottomPad } from '../components/KeyboardBottomPad';
+import { PageEnter } from '../components/TabScreenEnter';
+import { SCRUBBER_SLOT_W } from '../components/AlphabetScrubber';
+import { layout, palette, spacing, radii, typography } from '../constants/tokens';
+import { allAirports, airports } from '../data/airports';
+import {
+  getPreferences,
+  updatePreferences,
+  subscribePreferences,
+} from '../data/account';
+import { searchAirports } from '../lib/airportSearch';
 import type { Airport } from '../types';
-
-// ─── Helpers ─────────────────────────────────────────────
-
-/** Group airports by first letter of city, sorted Z→A */
-function groupByLetter(list: Airport[]) {
-  const map = new Map<string, Airport[]>();
-  for (const a of list) {
-    const letter = a.city[0].toUpperCase();
-    if (!map.has(letter)) map.set(letter, []);
-    map.get(letter)!.push(a);
-  }
-  // Sort groups Z→A, items within group Z→A
-  return [...map.entries()]
-    .sort(([a], [b]) => b.localeCompare(a))
-    .map(([letter, data]) => ({
-      title: letter,
-      data: data.sort((a, b) => b.city.localeCompare(a.city)),
-    }));
-}
-
-/** Fuzzy search — match city name, prioritise prefix */
-function searchAirports(query: string, list: Airport[]) {
-  const q = query.toLowerCase().trim();
-  if (!q) return [];
-  return list
-    .filter(
-      (a) =>
-        a.city.toLowerCase().includes(q) ||
-        a.iata.toLowerCase().includes(q) ||
-        a.name.toLowerCase().includes(q),
-    )
-    .sort((a, b) => {
-      // Prefix matches first
-      const aPrefix = a.city.toLowerCase().startsWith(q) ? 0 : 1;
-      const bPrefix = b.city.toLowerCase().startsWith(q) ? 0 : 1;
-      if (aPrefix !== bPrefix) return aPrefix - bPrefix;
-      return a.city.localeCompare(b.city);
-    });
-}
-
-// ─── Bold match component ────────────────────────────────
 
 function HighlightedText({ text, highlight }: { text: string; highlight: string }) {
   if (!highlight.trim()) {
@@ -79,110 +50,115 @@ function HighlightedText({ text, highlight }: { text: string; highlight: string 
   );
 }
 
-// ─── Alphabet scrubber ───────────────────────────────────
-
-const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').reverse();
-
-function AlphabetScrubber({
-  activeLetters,
-  onPress,
-}: {
-  activeLetters: Set<string>;
-  onPress: (letter: string) => void;
-}) {
-  return (
-    <View style={styles.scrubber}>
-      {LETTERS.map((letter) => {
-        const isActive = activeLetters.has(letter);
-        return (
-          <Pressable
-            key={letter}
-            onPress={() => isActive && onPress(letter)}
-            hitSlop={4}
-          >
-            <Text
-              style={[
-                styles.scrubberLetter,
-                isActive ? styles.scrubberActive : styles.scrubberInactive,
-              ]}
-            >
-              {letter}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-// ─── Main screen ─────────────────────────────────────────
-
 export default function AirportSearch() {
+  const router = useRouter();
+  const { morph } = useLocalSearchParams<{ morph?: string }>();
+  const fromMorph = morph === '1';
+
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Airport | null>(null);
+  const [homeOpen, setHomeOpen] = useState(false);
+  const [prefs, setPrefs] = useState(getPreferences);
   const inputRef = useRef<TextInput>(null);
-  const listRef = useRef<SectionList>(null);
+
+  useEffect(() => subscribePreferences(() => setPrefs(getPreferences())), []);
+
+  // Focus after skeleton dissolve so the keyboard doesn't fight the enter
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), fromMorph ? 560 : 480);
+    return () => clearTimeout(t);
+  }, [fromMorph]);
+
+  const homeAirport = useMemo(() => {
+    return (
+      airports.find((a) => a.iata === prefs.homeAirport) ??
+      allAirports.find((a) => a.iata === prefs.homeAirport) ??
+      null
+    );
+  }, [prefs.homeAirport]);
 
   const isSearching = query.length > 0;
-
-  // Grouped list (Z→A)
-  const sections = useMemo(() => groupByLetter(allAirports), []);
-
-  // Search results
   const searchResults = useMemo(
     () => (isSearching ? searchAirports(query, allAirports) : []),
     [query, isSearching],
   );
 
-  // Active letters for scrubber
-  const activeLetters = useMemo(
-    () => new Set(sections.map((s) => s.title)),
-    [sections],
-  );
-
-  const handleSelect = useCallback((airport: Airport) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setSelected(airport);
-    Keyboard.dismiss();
-  }, []);
-
-  const handleScrubberPress = useCallback(
-    (letter: string) => {
-      const sectionIndex = sections.findIndex((s) => s.title === letter);
-      if (sectionIndex >= 0 && listRef.current) {
-        listRef.current.scrollToLocation({
-          sectionIndex,
-          itemIndex: 0,
-          viewOffset: 40,
-          animated: true,
-        });
-      }
+  const handleSelect = useCallback(
+    (airport: Airport) => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setSelected(airport);
+      Keyboard.dismiss();
+      inputRef.current?.blur();
+      // Single-city path: destination → date → flights
+      router.push({
+        pathname: '/date-select',
+        params: { to: airport.iata, city: airport.city },
+      });
     },
-    [sections],
+    [router],
   );
+
+  const beginScrub = useCallback(() => {
+    Keyboard.dismiss();
+    inputRef.current?.blur();
+    if (query.length > 0) setQuery('');
+  }, [query]);
 
   const handleClear = useCallback(() => {
     setQuery('');
     inputRef.current?.focus();
   }, []);
 
-  // ── Render ──
+  const homeLabel = homeAirport
+    ? `${homeAirport.city}, ${homeAirport.country}`
+    : prefs.homeAirport;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* Header */}
-      <Row justify="space-between" style={styles.header}>
-        <View style={styles.locationPill}>
-          <Text style={{ fontSize: 14 }}>📍</Text>
-          <Text variant="bodySmall">New Delhi, India</Text>
-          <Feather name="chevron-down" size={14} color={palette.gray500} />
-        </View>
-        <Pressable style={styles.closeBtn} onPress={() => {}}>
-          <Feather name="x" size={20} color={palette.gray600} />
-        </Pressable>
-      </Row>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <PageEnter variant="search" backgroundColor={palette.white}>
+      <View>
+        <Row justify="space-between" style={styles.header}>
+          <Pressable
+            style={styles.locationPill}
+            onPress={() => {
+              Keyboard.dismiss();
+              setHomeOpen(true);
+            }}
+          >
+            <Feather name="map-pin" size={14} color={palette.primary600} />
+            <Text variant="bodySmall" numberOfLines={1} style={styles.locationText}>
+              {homeLabel}
+            </Text>
+            <Feather name="chevron-down" size={14} color={palette.gray500} />
+          </Pressable>
 
-      {/* Selected confirmation */}
+          <View style={styles.headerActions}>
+            <Pressable
+              onPress={() => {
+                Keyboard.dismiss();
+                router.push('/multi-city');
+              }}
+              hitSlop={8}
+              accessibilityRole="link"
+              accessibilityLabel="Add multi-city itinerary"
+            >
+              <Text variant="bodySmall" style={styles.multiCityLink}>
+                + Multi-city
+              </Text>
+            </Pressable>
+            <Pressable
+              style={styles.closeBtn}
+              onPress={() => {
+                if (router.canGoBack()) router.back();
+              }}
+              hitSlop={6}
+            >
+              <Feather name="x" size={20} color={palette.gray600} />
+            </Pressable>
+          </View>
+        </Row>
+      </View>
+
       {selected && (
         <View style={styles.selectedBanner}>
           <Text variant="bodyMedium" color="textInverse">
@@ -191,117 +167,108 @@ export default function AirportSearch() {
         </View>
       )}
 
-      {/* Content: either full list or search results */}
       <View style={styles.content}>
-        {isSearching ? (
-          // ── Search results ──
-          <View style={styles.searchResults}>
-            {searchResults.length > 0 ? (
-              <>
-                <Text
-                  variant="caption"
-                  color="textTertiary"
-                  style={styles.didYouMean}
-                >
-                  Did you mean
-                </Text>
-                {searchResults.map((airport) => (
-                  <Pressable
-                    key={`${airport.iata}-${airport.city}`}
-                    style={({ pressed }) => [
-                      styles.resultRow,
-                      pressed && styles.resultRowPressed,
-                    ]}
-                    onPress={() => handleSelect(airport)}
-                  >
-                    <HighlightedText
-                      text={`${airport.city} (${airport.iata})`}
-                      highlight={query}
-                    />
-                  </Pressable>
-                ))}
-              </>
-            ) : (
-              <View style={styles.noResults}>
-                <Text variant="body" color="textTertiary" align="center">
-                  No airports found
-                </Text>
-                <Text variant="caption" color="textTertiary" align="center">
-                  Try a different city or airport code
-                </Text>
-              </View>
-            )}
-          </View>
-        ) : (
-          // ── Full Z→A list with scrubber ──
-          <View style={styles.listContainer}>
-            <SectionList
-              ref={listRef}
-              sections={sections}
-              keyExtractor={(item, index) => `${item.iata}-${item.city}-${index}`}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.airportRow,
-                    pressed && styles.airportRowPressed,
-                  ]}
-                  onPress={() => handleSelect(item)}
-                >
-                  <Text style={styles.airportCity}>
-                    {item.city} ({item.iata})
-                  </Text>
-                </Pressable>
-              )}
-              renderSectionFooter={({ section }) => (
-                <Text style={styles.sectionLabel}>{section.title}</Text>
-              )}
-              stickySectionHeadersEnabled={false}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.listContent}
+        <AirportAlphabetList
+          airports={allAirports}
+          selectedIata={selected?.iata}
+          onSelectAirport={handleSelect}
+          onScrubStart={beginScrub}
+        />
+
+        {isSearching && (
+          <View style={styles.searchOverlay} pointerEvents="auto">
+            <ScrollView
+              style={styles.searchResults}
+              contentContainerStyle={styles.searchResultsContent}
               keyboardShouldPersistTaps="handled"
-              onScrollToIndexFailed={() => {}}
-            />
-            <AlphabetScrubber
-              activeLetters={activeLetters}
-              onPress={handleScrubberPress}
-            />
+              keyboardDismissMode="on-drag"
+            >
+              {searchResults.length > 0 ? (
+                <>
+                  <Text
+                    variant="caption"
+                    color="textTertiary"
+                    style={styles.didYouMean}
+                  >
+                    Did you mean
+                  </Text>
+                  {searchResults.map((airport) => (
+                    <Pressable
+                      key={`${airport.iata}-${airport.city}`}
+                      style={({ pressed }) => [
+                        styles.resultRow,
+                        pressed && styles.resultRowPressed,
+                      ]}
+                      onPress={() => handleSelect(airport)}
+                    >
+                      <HighlightedText
+                        text={`${airport.city} (${airport.iata})`}
+                        highlight={query}
+                      />
+                    </Pressable>
+                  ))}
+                </>
+              ) : (
+                <View style={styles.noResults}>
+                  <Text variant="body" color="textTertiary" align="center">
+                    No airports found
+                  </Text>
+                  <Text variant="caption" color="textTertiary" align="center">
+                    Try a different city or airport code
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
           </View>
         )}
       </View>
 
-      {/* Bottom search input */}
-      <View style={styles.searchBar}>
-        <Feather
-          name="search"
-          size={18}
-          color={palette.gray400}
-          style={styles.searchIcon}
-        />
-        <TextInput
-          ref={inputRef}
-          style={styles.searchInput}
-          placeholder="Where to next?"
-          placeholderTextColor={palette.gray400}
-          value={query}
-          onChangeText={(text) => {
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            setQuery(text);
-          }}
-          selectionColor={palette.primary500}
-          autoFocus
-          returnKeyType="search"
-        />
-        {query.length > 0 && (
-          <Pressable onPress={handleClear} hitSlop={8}>
-            <Feather name="x-circle" size={18} color={palette.gray400} />
-          </Pressable>
-        )}
-      </View>
+      <KeyboardBottomPad style={styles.searchBarChrome}>
+          <View style={styles.searchBar}>
+            <Feather
+              name="search"
+              size={18}
+              color={palette.gray400}
+              style={styles.searchIcon}
+            />
+            <TextInput
+              ref={inputRef}
+              style={styles.searchInput}
+              placeholder="Where to next?"
+              placeholderTextColor={palette.gray400}
+              value={query}
+              onChangeText={(text) => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setQuery(text);
+              }}
+              selectionColor={palette.primary500}
+              autoFocus={false}
+              returnKeyType="search"
+              autoCorrect={false}
+            />
+            {query.length > 0 && (
+              <Pressable onPress={handleClear} hitSlop={8}>
+                <Feather name="x-circle" size={18} color={palette.gray400} />
+              </Pressable>
+            )}
+          </View>
+        </KeyboardBottomPad>
+      </PageEnter>
+
+      <AirportSearchSheet
+        visible={homeOpen}
+        selectedIata={prefs.homeAirport}
+        title="Home airport"
+        subtitle="Default origin for search — same picker as Account"
+        onClose={() => setHomeOpen(false)}
+        onSelect={(airport) => {
+          updatePreferences({ homeAirport: airport.iata });
+          setHomeOpen(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
-
-// ─── Styles ──────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   safe: {
@@ -309,9 +276,8 @@ const styles = StyleSheet.create({
     backgroundColor: palette.white,
   },
 
-  // Header
   header: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingVertical: spacing.sm,
   },
   locationPill: {
@@ -322,6 +288,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     gap: spacing.xs,
+    flexShrink: 1,
+    maxWidth: '52%',
+    borderWidth: 1,
+    borderColor: palette.gray200,
+  },
+  locationText: {
+    flexShrink: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  multiCityLink: {
+    color: palette.primary600,
+    fontWeight: '600',
   },
   closeBtn: {
     width: 44,
@@ -333,10 +315,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Selected banner
   selectedBanner: {
     backgroundColor: palette.primary500,
-    marginHorizontal: spacing.lg,
+    marginHorizontal: layout.screenPadding,
     marginTop: spacing.xs,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -344,77 +325,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Content area
   content: {
     flex: 1,
   },
 
-  // ── Full list ──
-  listContainer: {
-    flex: 1,
-    flexDirection: 'row',
+  searchOverlay: {
+    ...StyleSheet.absoluteFill,
+    right: SCRUBBER_SLOT_W,
+    backgroundColor: palette.white,
+    zIndex: 10,
   },
-  listContent: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  airportRow: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xs,
-    borderRadius: radii.sm,
-  },
-  airportRowPressed: {
-    backgroundColor: palette.gray50,
-  },
-  airportCity: {
-    fontSize: 20,
-    lineHeight: 28,
-    fontWeight: '400',
-    color: palette.gray900,
-  },
-  airportCityBold: {
-    fontWeight: '700',
-    color: palette.gray900,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: palette.gray400,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.xs,
-  },
-
-  // ── Alphabet scrubber ──
-  scrubber: {
-    position: 'absolute',
-    right: 4,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    width: 24,
-  },
-  scrubberLetter: {
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: 'center',
-  },
-  scrubberActive: {
-    fontWeight: '700',
-    color: palette.gray900,
-  },
-  scrubberInactive: {
-    fontWeight: '400',
-    color: palette.gray300,
-  },
-
-  // ── Search results ──
   searchResults: {
     flex: 1,
+  },
+  searchResultsContent: {
+    flexGrow: 1,
     justifyContent: 'flex-end',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingBottom: spacing.md,
   },
   didYouMean: {
@@ -433,15 +360,28 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingBottom: spacing.xl,
   },
+  airportCity: {
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: '400',
+    color: palette.gray900,
+  },
+  airportCityBold: {
+    fontWeight: '700',
+    color: palette.gray900,
+  },
 
-  // ── Search bar ──
+  searchBarChrome: {
+    backgroundColor: palette.white,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: palette.gray200,
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: palette.gray200,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
     backgroundColor: palette.white,
     gap: spacing.sm,
   },

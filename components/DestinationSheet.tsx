@@ -13,16 +13,19 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from './ui';
-import { palette, spacing, radii, shadows } from '../constants/tokens';
+import { layout, palette, spacing, radii, shadows } from '../constants/tokens';
 import {
   formatFlightTime,
   cheapestMonth,
   priceBounds,
   type Destination,
 } from '../data/destinations';
+import { isFavorite, toggleFavorite, subscribeFavorites } from '../data/favorites';
+import { WeatherIcon } from './WeatherIcon';
+import { weatherFor } from '../data/weather';
 
 const { width: SW, height: SH } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 const CONTENT_W = SW - HPAD * 2;
 
 const SHEET_H = SH * 0.9;
@@ -48,7 +51,10 @@ export function DestinationSheet({
 }) {
   const insets = useSafeAreaInsets();
   const [activeMonth, setActiveMonth] = useState<string | null>(null);
+  const [favTick, setFavTick] = useState(0);
   const translateY = useRef(new Animated.Value(SHEET_H)).current;
+
+  useEffect(() => subscribeFavorites(() => setFavTick((n) => n + 1)), []);
 
   useEffect(() => {
     if (visible) {
@@ -107,6 +113,9 @@ export function DestinationSheet({
     ? destination.prices.find((p) => p.month === activeMonth)
     : null;
   const saving = destination.typicalPrice - destination.fromPrice;
+  const saved = isFavorite(destination.id);
+  const wx = weatherFor(`${destination.city}-${destination.iata}`);
+  void favTick;
 
   return (
     <Modal
@@ -150,6 +159,41 @@ export function DestinationSheet({
             </View>
 
             <View style={s.body}>
+              {/* Weather + save — lived here so cards stay calm */}
+              <View style={s.contextRow}>
+                <View style={s.weatherChip}>
+                  <WeatherIcon kind={wx.kind} size={26} />
+                  <View>
+                    <Text variant="bodyMedium" style={{ fontWeight: '700' }}>
+                      {wx.tempC}°
+                    </Text>
+                    <Text variant="caption" color="textSecondary">
+                      {wx.label} now
+                    </Text>
+                  </View>
+                </View>
+                <Pressable
+                  style={[s.saveChip, saved && s.saveChipOn]}
+                  onPress={() => toggleFavorite(destination.id)}
+                  accessibilityLabel={saved ? 'Remove from saved' : 'Save destination'}
+                >
+                  <Feather
+                    name="heart"
+                    size={16}
+                    color={saved ? palette.error : palette.primary600}
+                  />
+                  <Text
+                    variant="bodySmall"
+                    style={{
+                      color: saved ? palette.error : palette.primary700,
+                      fontWeight: '600',
+                    }}
+                  >
+                    {saved ? 'Saved' : 'Save'}
+                  </Text>
+                </Pressable>
+              </View>
+
               {/* Quick facts */}
               <View style={s.facts}>
                 <Fact
@@ -427,6 +471,41 @@ const s = StyleSheet.create({
 
   body: { paddingHorizontal: HPAD, paddingTop: spacing.lg },
 
+  contextRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  weatherChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+    backgroundColor: palette.gray50,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: palette.gray200,
+  },
+  saveChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 48,
+    borderRadius: radii.full,
+    backgroundColor: palette.primary50,
+    borderWidth: 1,
+    borderColor: palette.primary100,
+  },
+  saveChipOn: {
+    backgroundColor: palette.errorLight,
+    borderColor: '#FECACA',
+  },
   facts: {
     flexDirection: 'row',
     alignItems: 'center',

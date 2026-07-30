@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   ScrollView,
@@ -7,119 +7,234 @@ import {
   StyleSheet,
   LayoutAnimation,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
-import { palette, spacing, radii, typography, shadows } from '../constants/tokens';
+import { layout, palette, spacing, radii, typography, shadows } from '../constants/tokens';
 import { PassengerSheet } from '../components/PassengerSheet';
 import { ExtrasSheet, type ExtraKind } from '../components/ExtrasSheet';
 import { SeatSheet } from '../components/SeatSheet';
+import { KeyboardBottomPad } from '../components/KeyboardBottomPad';
+import { useKeyboardLift } from '../hooks/useKeyboardLift';
 import {
-  emptyPassenger,
   passengerName,
   isComplete,
   validateContact,
-  buildQuote,
+  buildTripQuote,
   firstBlocker,
+  passengersReady,
   seatPrice,
   meals,
   baggage,
   payMethods,
   PASSENGER_LABEL,
+  emptyPassenger,
+  withPrimary,
   type Passenger,
   type Contact,
-  type PayMethod,
+  type PaymentSelection,
 } from '../data/booking';
+import {
+  resolveBookingItinerary,
+  tripModeLabel,
+} from '../data/bookingItinerary';
+import { offerById } from '../data/offers';
+import {
+  getLinkedLoyalty,
+  subscribeLoyalty,
+  updateLoyaltyPoints,
+  redeemableForBooking,
+  clampRedemption,
+  altitudeEarnPoints,
+  type AppliedRedemption,
+  type RedemptionOption,
+} from '../data/loyalty';
+import { shortPax, describePax, totalTravellers } from '../lib/flightRules';
+import { BookingPaymentSheet } from '../components/BookingPaymentSheet';
+import { ItinerarySummary } from '../components/ItinerarySummary';
 
-const HPAD = spacing.lg;
-const BASE_FARE = 4250;
-
-const INTERNATIONAL = false; // Set true when the route crosses a border
-const DEPART_ISO = new Date(Date.now() + 19.5 * 3600_000).toISOString();
-
-const FLIGHT = {
-  route: 'DEL → BLR',
-  date: 'Sat, 15 Aug',
-  airline: 'Air India',
-  code: 'AI',
-  color: '#CD2C2C',
-  flightNumber: 'AI 806',
-  depart: '06:15',
-  arrive: '08:50',
-  duration: '2h 35m',
-  fare: 'Economy',
-  refundable: true,
-};
+const HPAD = layout.screenPadding;
 
 let seq = 0;
 const nextId = () => `p${++seq}`;
 
 export default function Booking() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    legs?: string;
+    trip?: string;
+    adults?: string;
+    children?: string;
+    infants?: string;
+    total?: string;
+  }>();
 
+  const itinerary = useMemo(() => resolveBookingItinerary(params), [params]);
+
+  // Only saved travellers live here — aborting the sheet must not leave empty stubs.
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [contact, setContact] = useState<Contact>({ email: '', phone: '' });
   const [contactTouched, setContactTouched] = useState(false);
-  const [method, setMethod] = useState<PayMethod | null>(null);
+  const [payment, setPayment] = useState<PaymentSelection | null>(null);
+  const [payOpen, setPayOpen] = useState(false);
 
-  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(true);
   const [priceOpen, setPriceOpen] = useState(false);
   const [attempted, setAttempted] = useState(false);
+  const [seatNudgeDismissed, setSeatNudgeDismissed] = useState(false);
 
   const [editing, setEditing] = useState<Passenger | null>(null);
   const [editIndex, setEditIndex] = useState(0);
   const [extras, setExtras] = useState<ExtraKind | null>(null);
   const [seatsOpen, setSeatsOpen] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [earnedPoints, setEarnedPoints] = useState(0);
+  const openedFirst = useRef(false);
+
+  const [linked, setLinked] = useState(getLinkedLoyalty);
+  const [applied, setApplied] = useState<AppliedRedemption[]>([]);
+
+  useEffect(() => subscribeLoyalty(() => setLinked(getLinkedLoyalty())), []);
+
+  // Open a fresh draft for the first passenger — not added to the list until Save.
+  useEffect(() => {
+    if (openedFirst.current) return;
+    openedFirst.current = true;
+    const t = setTimeout(() => {
+      const p = emptyPassenger('adult', nextId(), true);
+      setEditIndex(0);
+      setEditing(p);
+    }, 280);
+    return () => clearTimeout(t);
+  }, []);
 
   const scrollRef = useRef<ScrollView>(null);
+  const keyboardLift = useKeyboardLift();
 
   const animate = () =>
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
+  const expectedTravellers = totalTravellers(itinerary.pax);
+  const paxDone =
+    passengersReady(passengers) && passengers.length >= expectedTravellers;
+
+  const flightLabel =
+    itinerary.segments.length > 1
+      ? `${tripModeLabel(itinerary.mode)} · ${itinerary.segments.length} flights`
+      : 'Flight';
+
   const quote = useMemo(
-    () => buildQuote(passengers, BASE_FARE),
-    [passengers],
-  );
-  const contactErrors = useMemo(() => validateContact(contact), [contact]);
-  const blocker = useMemo(
-    () => firstBlocker(passengers, contact, method),
-    [passengers, contact, method],
+    () =>
+      buildTripQuote(
+        passengers,
+        itinerary.flightTotal,
+        flightLabel,
+        itinerary.seatComplimentary,
+      ),
+    [passengers, itinerary.flightTotal, flightLabel, itinerary.seatComplimentary],
   );
 
-  // ── Passenger actions ──
+  useEffect(() => {
+    setApplied((list) =>
+      list.filter((a) => {
+        const opt = redeemableForBooking(
+          getLinkedLoyalty(),
+          itinerary.marketingCode,
+          quote.total || 1,
+        ).find((o) => o.programId === a.programId);
+        return !!opt;
+      }),
+    );
+  }, [itinerary.marketingCode, quote.total]);
+
+  const redeemOptions = useMemo(
+    () => redeemableForBooking(linked, itinerary.marketingCode, quote.total),
+    [linked, itinerary.marketingCode, quote.total],
+  );
+
+  const redeemValue = applied.reduce((n, a) => n + a.value, 0);
+  const payable = Math.max(0, quote.total - redeemValue);
+
+  const contactErrors = useMemo(() => validateContact(contact), [contact]);
+  const blocker = useMemo(
+    () => firstBlocker(passengers, contact, payment?.method ?? null),
+    [passengers, contact, payment],
+  );
+
+  const needsSeatNudge =
+    itinerary.seatComplimentary &&
+    paxDone &&
+    passengers.some((p) => !p.seat) &&
+    !seatNudgeDismissed;
+
+  const openIncompletePassenger = useCallback(() => {
+    const idx = passengers.findIndex((p) => !isComplete(p));
+    if (idx >= 0) {
+      setEditIndex(idx);
+      // Clone so in-sheet edits never mutate the list until Save
+      setEditing({ ...passengers[idx], assistance: [...passengers[idx].assistance] });
+      return;
+    }
+    const p = emptyPassenger('adult', nextId(), passengers.length === 0);
+    setEditIndex(passengers.length);
+    setEditing(p);
+  }, [passengers]);
+
   const addPassenger = useCallback(() => {
-    const p = emptyPassenger(passengers.length === 0 ? 'adult' : 'adult', nextId());
+    const p = emptyPassenger('adult', nextId(), passengers.length === 0);
     setEditIndex(passengers.length);
     setEditing(p);
   }, [passengers.length]);
 
+  /** Discard sheet draft — never write partial fields into the list. */
+  const abortPassenger = useCallback(() => {
+    setEditing(null);
+  }, []);
+
   const savePassenger = useCallback((p: Passenger) => {
+    if (!isComplete(p)) return;
     animate();
     setPassengers((list) => {
       const i = list.findIndex((x) => x.id === p.id);
-      return i === -1 ? [...list, p] : list.map((x) => (x.id === p.id ? p : x));
+      let next = i === -1 ? [...list, p] : list.map((x) => (x.id === p.id ? p : x));
+      if (p.primary) next = withPrimary(next, p.id);
+      else if (!next.some((x) => x.primary) && next.length > 0) {
+        next = withPrimary(next, next[0].id);
+      }
+      return next;
     });
     setEditing(null);
   }, []);
 
   const removePassenger = useCallback((id: string) => {
     animate();
-    setPassengers((list) => list.filter((p) => p.id !== id));
+    setPassengers((list) => {
+      const target = list.find((p) => p.id === id);
+      if (target?.primary) return list;
+      const next = list.filter((p) => p.id !== id);
+      if (next.length > 0 && !next.some((p) => p.primary)) {
+        return withPrimary(next, next[0].id);
+      }
+      return next;
+    });
     setEditing(null);
   }, []);
 
-  // ── Extras summaries ──
   const seatSummary = useMemo(() => {
     const chosen = passengers.filter((p) => p.seat);
     if (chosen.length === 0) return null;
-    const cost = passengers.reduce((n, p) => n + seatPrice(p.seat), 0);
-    return `${chosen.map((p) => p.seat).join(', ')} · ₹${cost.toLocaleString()}`;
-  }, [passengers]);
+    const cost = passengers.reduce(
+      (n, p) => n + seatPrice(p.seat, itinerary.seatComplimentary),
+      0,
+    );
+    const seats = chosen.map((p) => p.seat).join(', ');
+    if (itinerary.seatComplimentary) return `${seats} · Complimentary`;
+    return `${seats} · ₹${cost.toLocaleString()}`;
+  }, [passengers, itinerary.seatComplimentary]);
 
   const mealSummary = useMemo(() => {
+    if (itinerary.mealComplimentary) return 'Included with your fare';
     const chosen = passengers.filter((p) => p.mealId && p.mealId !== 'none');
     if (chosen.length === 0) return null;
     const cost = chosen.reduce(
@@ -127,7 +242,7 @@ export default function Booking() {
       0,
     );
     return `${chosen.length} meal${chosen.length > 1 ? 's' : ''} · ₹${cost.toLocaleString()}`;
-  }, [passengers]);
+  }, [passengers, itinerary.mealComplimentary]);
 
   const baggageSummary = useMemo(() => {
     const chosen = passengers.filter((p) => p.baggageId && p.baggageId !== 'included');
@@ -144,21 +259,49 @@ export default function Booking() {
     return n === 0 ? null : `${n} request${n > 1 ? 's' : ''}`;
   }, [passengers]);
 
-  // ── Pay ──
   const handlePay = useCallback(() => {
     setAttempted(true);
+    if (!paxDone) {
+      openIncompletePassenger();
+      return;
+    }
     if (blocker) {
       setContactTouched(true);
-      if (blocker.kind === 'contact' || blocker.kind === 'payment') {
+      if (blocker.kind === 'payment') {
+        setPayOpen(true);
+        return;
+      }
+      if (blocker.kind === 'contact') {
         scrollRef.current?.scrollToEnd({ animated: true });
       } else {
         scrollRef.current?.scrollTo({ y: 0, animated: true });
       }
       return;
     }
+    for (const a of applied) {
+      if (a.points > 0) updateLoyaltyPoints(a.programId, -a.points);
+    }
+    const earn = altitudeEarnPoints(payable);
+    if (earn > 0) updateLoyaltyPoints('altitude', earn);
+    setEarnedPoints(earn);
     animate();
     setPaid(true);
-  }, [blocker]);
+  }, [blocker, applied, payable, paxDone, openIncompletePassenger]);
+
+  const toggleRedeem = (opt: RedemptionOption) => {
+    animate();
+    setApplied((list) => {
+      const existing = list.find((a) => a.programId === opt.programId);
+      if (existing && existing.points > 0) {
+        return list.filter((a) => a.programId !== opt.programId);
+      }
+      const next = clampRedemption(opt, opt.maxPoints);
+      return [next];
+    });
+  };
+
+  const primarySeg = itinerary.segments[0];
+  const incompleteCount = passengers.filter((p) => !isComplete(p)).length;
 
   if (paid) {
     return (
@@ -175,15 +318,34 @@ export default function Booking() {
           </Text>
           <View style={s.doneCard}>
             <Text variant="caption" color="textTertiary">
-              {FLIGHT.flightNumber} · {FLIGHT.date}
+              {itinerary.subtitle} · {primarySeg?.dateLabel}
             </Text>
             <Text variant="h2" style={{ marginTop: 2 }}>
-              {FLIGHT.route}
+              {itinerary.title}
             </Text>
-            <Text variant="bodySmall" color="textSecondary" style={{ marginTop: 6 }}>
+            {itinerary.segments.map((seg) => (
+              <Text
+                key={seg.legId}
+                variant="caption"
+                color="textSecondary"
+                style={{ marginTop: 4 }}
+              >
+                {seg.label}: {seg.flightNumber} · {seg.depart}–{seg.arrive}
+              </Text>
+            ))}
+            <Text variant="bodySmall" color="textSecondary" style={{ marginTop: 8 }}>
               {passengers.length} passenger{passengers.length > 1 ? 's' : ''} · ₹
-              {quote.total.toLocaleString()}
+              {payable.toLocaleString()}
+              {redeemValue > 0 ? ` paid · ₹${redeemValue.toLocaleString()} in points` : ''}
             </Text>
+            {earnedPoints > 0 && (
+              <View style={s.earnRow}>
+                <Feather name="award" size={14} color={palette.primary600} />
+                <Text variant="caption" style={{ color: palette.primary700, flex: 1 }}>
+                  +{earnedPoints.toLocaleString()} Altitude Rewards points earned
+                </Text>
+              </View>
+            )}
           </View>
 
           <Pressable
@@ -202,64 +364,47 @@ export default function Booking() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-      {/* Header */}
       <View style={s.header}>
-        <Pressable style={s.back} onPress={() => {}}>
+        <Pressable style={s.back} onPress={() => router.back()}>
           <Feather name="chevron-left" size={21} color={palette.gray900} />
         </Pressable>
-        <Text variant="h2" style={{ flex: 1 }}>
-          Review and pay
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text variant="h2">Review and pay</Text>
+          <Text variant="caption" color="textTertiary" numberOfLines={1}>
+            {itinerary.subtitle} · {shortPax(itinerary.pax)}
+          </Text>
+        </View>
       </View>
 
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
-        contentContainerStyle={s.scroll}
+        contentContainerStyle={[
+          s.scroll,
+          keyboardLift > 0 && { paddingBottom: spacing.xl + 24 },
+        ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
-        {/* ── Flight, kept quiet ── */}
-        <Pressable
-          style={s.flight}
-          onPress={() => {
+        {/* ── Trip summary ── */}
+        <ItinerarySummary
+          itinerary={itinerary}
+          open={summaryOpen}
+          onToggle={() => {
             animate();
             setSummaryOpen((v) => !v);
           }}
-        >
-          <View style={[s.airline, { backgroundColor: FLIGHT.color }]}>
-            <Text variant="caption" style={{ color: palette.white, fontWeight: '700' }}>
-              {FLIGHT.code}
-            </Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text variant="bodyMedium">{FLIGHT.route}</Text>
-            <Text variant="caption" color="textTertiary">
-              {FLIGHT.date} · {FLIGHT.depart} · {FLIGHT.fare}
-            </Text>
-          </View>
-          <Feather
-            name={summaryOpen ? 'chevron-up' : 'chevron-down'}
-            size={18}
-            color={palette.gray400}
-          />
-        </Pressable>
+        />
 
-        {summaryOpen && (
-          <View style={s.flightDetail}>
-            <DetailLine label="Flight" value={`${FLIGHT.airline} · ${FLIGHT.flightNumber}`} />
-            <DetailLine label="Departs" value={`${FLIGHT.depart} · Delhi (T3)`} />
-            <DetailLine label="Arrives" value={`${FLIGHT.arrive} · Bengaluru (T1)`} />
-            <DetailLine label="Duration" value={`${FLIGHT.duration} · Direct`} />
-            <DetailLine
-              label="Fare"
-              value={FLIGHT.refundable ? 'Economy · Refundable' : 'Economy'}
-            />
-          </View>
-        )}
-
-        {/* ── Passengers: the focus of this page ── */}
+        {/* ── Passengers first ── */}
         <SectionLabel>PASSENGERS</SectionLabel>
+        <Text variant="caption" color="textTertiary" style={s.sectionNote}>
+          Names must match the ID used at the airport. Add these before seats and payment.
+          {expectedTravellers > 1
+            ? ` · ${describePax(itinerary.pax)} on this trip`
+            : ''}
+        </Text>
 
         {passengers.length === 0 ? (
           <Pressable
@@ -272,7 +417,7 @@ export default function Booking() {
             <View style={{ flex: 1 }}>
               <Text variant="bodyMedium">Add the first passenger</Text>
               <Text variant="caption" color="textTertiary">
-                Name must match the ID used at the airport
+                Details are only kept when you tap Save
               </Text>
             </View>
             <Feather name="chevron-right" size={18} color={palette.gray400} />
@@ -287,7 +432,7 @@ export default function Booking() {
                   style={[s.passenger, !complete && attempted && s.passengerBlocked]}
                   onPress={() => {
                     setEditIndex(i);
-                    setEditing(p);
+                    setEditing({ ...p, assistance: [...p.assistance] });
                   }}
                 >
                   <View style={[s.pIndex, complete && s.pIndexOk]}>
@@ -304,11 +449,18 @@ export default function Booking() {
                   </View>
 
                   <View style={{ flex: 1 }}>
-                    <Text variant="bodyMedium" numberOfLines={1}>
-                      {complete
-                        ? `${p.title} ${passengerName(p)}`
-                        : passengerName(p)}
-                    </Text>
+                    <View style={s.paxNameRow}>
+                      <Text variant="bodyMedium" numberOfLines={1} style={{ flexShrink: 1 }}>
+                        {complete
+                          ? `${p.title} ${passengerName(p)}`
+                          : passengerName(p)}
+                      </Text>
+                      {p.primary && (
+                        <View style={s.primaryBadge}>
+                          <Text style={s.primaryBadgeText}>Primary</Text>
+                        </View>
+                      )}
+                    </View>
                     <Text variant="caption" color="textTertiary" numberOfLines={1}>
                       {complete
                         ? [
@@ -344,134 +496,271 @@ export default function Booking() {
           </>
         )}
 
-        {/* ── Extras: quiet rows ── */}
-        <SectionLabel>EXTRAS</SectionLabel>
-
-        <View style={s.extras}>
-          <ExtraRow
-            icon="grid"
-            label="Seats"
-            value={seatSummary}
-            fallback="Assigned free at check-in"
-            onPress={() => setSeatsOpen(true)}
-          />
-          <ExtraRow
-            icon="coffee"
-            label="Meals"
-            value={mealSummary}
-            fallback="Buy on board"
-            onPress={() => setExtras('meal')}
-          />
-          <ExtraRow
-            icon="briefcase"
-            label="Extra baggage"
-            value={baggageSummary}
-            fallback="15 kg included"
-            onPress={() => setExtras('baggage')}
-          />
-          <ExtraRow
-            icon="heart"
-            label="Special assistance"
-            value={assistSummary}
-            fallback="Wheelchair, medical and more"
-            onPress={() => setExtras('assistance')}
-            last
-          />
-        </View>
-
-        {/* ── Contact ── */}
-        <SectionLabel>CONTACT</SectionLabel>
-        <Text variant="caption" color="textTertiary" style={s.sectionNote}>
-          Ticket and airline updates go here
-        </Text>
-
-        <View style={s.field}>
-          <TextInput
-            style={[
-              s.input,
-              contactTouched && contactErrors.email && s.inputError,
-            ]}
-            value={contact.email}
-            onChangeText={(v) => setContact((c) => ({ ...c, email: v }))}
-            onBlur={() => setContactTouched(true)}
-            placeholder="Email address"
-            placeholderTextColor={palette.gray400}
-            selectionColor={palette.primary500}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {contactTouched && contactErrors.email && (
-            <ErrorLine text={contactErrors.email} />
-          )}
-        </View>
-
-        <View style={s.field}>
-          <View style={s.phoneRow}>
-            <View style={s.dial}>
-              <Text variant="bodySmall">+91</Text>
-            </View>
-            <TextInput
-              style={[
-                s.input,
-                s.phoneInput,
-                contactTouched && contactErrors.phone && s.inputError,
-              ]}
-              value={contact.phone}
-              onChangeText={(v) =>
-                setContact((c) => ({ ...c, phone: v.replace(/\D/g, '').slice(0, 10) }))
-              }
-              onBlur={() => setContactTouched(true)}
-              placeholder="Mobile number"
-              placeholderTextColor={palette.gray400}
-              selectionColor={palette.primary500}
-              keyboardType="number-pad"
-            />
+        {!paxDone && (
+          <View style={s.nextHint}>
+            <Feather name="lock" size={14} color={palette.gray500} />
+            <Text variant="caption" color="textTertiary" style={{ flex: 1 }}>
+              Seats, extras, contact and payment unlock after passenger details are complete
+              {incompleteCount > 0 ? ` (${incompleteCount} left)` : ''}.
+            </Text>
           </View>
-          {contactTouched && contactErrors.phone && (
-            <ErrorLine text={contactErrors.phone} />
-          )}
-        </View>
+        )}
 
-        {/* ── Payment ── */}
-        <SectionLabel>PAYMENT</SectionLabel>
+        {/* ── Rest of checkout — only after passengers are ready ── */}
+        {paxDone && (
+          <>
+            <SectionLabel>EXTRAS</SectionLabel>
+            <Text variant="caption" color="textTertiary" style={s.sectionNote}>
+              {itinerary.premiumFare
+                ? 'Your fare includes complimentary extras — pick seats now or after booking'
+                : 'Optional — you can skip and choose at check-in'}
+            </Text>
 
-        <View style={s.extras}>
-          {payMethods.map((m, i) => (
-            <Pressable
-              key={m.id}
-              style={[s.payRow, i === payMethods.length - 1 && { borderBottomWidth: 0 }]}
-              onPress={() => setMethod(m.id)}
-            >
-              <View style={s.payIcon}>
-                <Feather name={m.icon as never} size={17} color={palette.gray600} />
+            {needsSeatNudge && (
+              <View style={s.seatNudge}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text variant="bodySmall" style={{ fontWeight: '600' }}>
+                    Choose your complimentary seats
+                  </Text>
+                  <Text variant="caption" color="textTertiary">
+                    Included with your fare. Skip for now — you can still pick seats after booking.
+                  </Text>
+                </View>
+                <Pressable style={s.seatNudgeBtn} onPress={() => setSeatsOpen(true)}>
+                  <Text style={s.seatNudgeBtnText}>Seats</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    animate();
+                    setSeatNudgeDismissed(true);
+                  }}
+                  hitSlop={8}
+                  style={s.seatNudgeDismiss}
+                >
+                  <Feather name="x" size={16} color={palette.gray500} />
+                </Pressable>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text variant="bodyMedium">{m.name}</Text>
-                <Text variant="caption" color="textTertiary">
-                  {m.note}
-                </Text>
+            )}
+
+            <View style={s.extras}>
+              <ExtraRow
+                icon="grid"
+                label="Seats"
+                value={seatSummary}
+                fallback={
+                  itinerary.seatComplimentary
+                    ? 'Complimentary — choose seats'
+                    : 'Assigned free at check-in'
+                }
+                highlight={!seatSummary && itinerary.seatComplimentary}
+                onPress={() => setSeatsOpen(true)}
+              />
+              <ExtraRow
+                icon="coffee"
+                label="Meals"
+                value={mealSummary}
+                fallback={
+                  itinerary.mealComplimentary ? 'Included with your fare' : 'Buy on board'
+                }
+                onPress={() => {
+                  if (itinerary.mealComplimentary) return;
+                  setExtras('meal');
+                }}
+                locked={itinerary.mealComplimentary}
+              />
+              <ExtraRow
+                icon="briefcase"
+                label="Extra baggage"
+                value={baggageSummary}
+                fallback={
+                  itinerary.segments[0]?.checkInKg
+                    ? `${itinerary.segments[0].checkInKg} kg included`
+                    : '15 kg included'
+                }
+                onPress={() => setExtras('baggage')}
+              />
+              <ExtraRow
+                icon="heart"
+                label="Special assistance"
+                value={assistSummary}
+                fallback="Wheelchair, medical and more"
+                onPress={() => setExtras('assistance')}
+                last
+              />
+            </View>
+
+            <SectionLabel>CONTACT</SectionLabel>
+            <Text variant="caption" color="textTertiary" style={s.sectionNote}>
+              Ticket and airline updates go here
+            </Text>
+
+            <View style={s.field}>
+              <TextInput
+                style={[
+                  s.input,
+                  contactTouched && contactErrors.email && s.inputError,
+                ]}
+                value={contact.email}
+                onChangeText={(v) => setContact((c) => ({ ...c, email: v }))}
+                onBlur={() => setContactTouched(true)}
+                placeholder="Email address"
+                placeholderTextColor={palette.gray400}
+                selectionColor={palette.primary500}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {contactTouched && contactErrors.email && (
+                <ErrorLine text={contactErrors.email} />
+              )}
+            </View>
+
+            <View style={s.field}>
+              <View style={s.phoneRow}>
+                <View style={s.dial}>
+                  <Text variant="bodySmall">+91</Text>
+                </View>
+                <TextInput
+                  style={[
+                    s.input,
+                    s.phoneInput,
+                    contactTouched && contactErrors.phone && s.inputError,
+                  ]}
+                  value={contact.phone}
+                  onChangeText={(v) =>
+                    setContact((c) => ({
+                      ...c,
+                      phone: v.replace(/\D/g, '').slice(0, 10),
+                    }))
+                  }
+                  onBlur={() => setContactTouched(true)}
+                  placeholder="Mobile number"
+                  placeholderTextColor={palette.gray400}
+                  selectionColor={palette.primary500}
+                  keyboardType="number-pad"
+                />
               </View>
-              <View style={[s.radio, method === m.id && s.radioOn]}>
-                {method === m.id && <Feather name="check" size={13} color={palette.white} />}
-              </View>
+              {contactTouched && contactErrors.phone && (
+                <ErrorLine text={contactErrors.phone} />
+              )}
+            </View>
+
+            <SectionLabel>REWARDS</SectionLabel>
+            <View style={s.extras}>
+              {redeemOptions.length === 0 ? (
+                <View style={s.loyaltyEmpty}>
+                  <Feather name="award" size={16} color={palette.gray500} />
+                  <Text variant="caption" color="textTertiary" style={{ flex: 1 }}>
+                    Link Altitude Rewards or an airline programme in Account to redeem
+                    here. Airline points only apply when that carrier markets the flight.
+                  </Text>
+                </View>
+              ) : (
+                redeemOptions.map((opt, i) => {
+                  const active = applied.find((a) => a.programId === opt.programId);
+                  const on = !!(active && active.points > 0);
+                  return (
+                    <Pressable
+                      key={opt.programId}
+                      style={[
+                        s.payRow,
+                        i === redeemOptions.length - 1 && { borderBottomWidth: 0 },
+                      ]}
+                      onPress={() => toggleRedeem(opt)}
+                    >
+                      <View
+                        style={[s.payIcon, { backgroundColor: opt.program.color + '22' }]}
+                      >
+                        <Feather
+                          name={opt.program.kind === 'platform' ? 'award' : 'navigation'}
+                          size={17}
+                          color={opt.program.color}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text variant="bodyMedium">{opt.program.programName}</Text>
+                        <Text variant="caption" color="textTertiary">
+                          {opt.balance.toLocaleString()} pts · up to ₹
+                          {opt.maxValue.toLocaleString()}
+                          {opt.program.kind === 'airline'
+                            ? ` · ${opt.program.airlineName} only`
+                            : ' · any Altitude booking'}
+                        </Text>
+                      </View>
+                      <View style={[s.radio, on && s.radioOn]}>
+                        {on && <Feather name="check" size={13} color={palette.white} />}
+                      </View>
+                    </Pressable>
+                  );
+                })
+              )}
+            </View>
+            {redeemValue > 0 && (
+              <Text variant="caption" color="textTertiary" style={s.loyaltyHint}>
+                Applying ₹{redeemValue.toLocaleString()} in points. You pay ₹
+                {payable.toLocaleString()} today.
+              </Text>
+            )}
+
+            <SectionLabel>PAYMENT</SectionLabel>
+            <Pressable style={s.paySelected} onPress={() => setPayOpen(true)}>
+              {payment ? (
+                <>
+                  <View style={s.payIcon}>
+                    <Feather
+                      name={
+                        (payMethods.find((m) => m.id === payment.method)?.icon ??
+                          'credit-card') as never
+                      }
+                      size={17}
+                      color={palette.gray600}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text variant="bodyMedium">
+                      {payMethods.find((m) => m.id === payment.method)?.name}
+                    </Text>
+                    <Text variant="caption" color="textTertiary" numberOfLines={1}>
+                      {payment.detail}
+                      {payment.offerId
+                        ? ` · ${offerById(payment.offerId)?.title ?? 'Offer applied'}`
+                        : ''}
+                    </Text>
+                  </View>
+                  <Text variant="caption" style={{ color: palette.primary600, fontWeight: '600' }}>
+                    Change
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <View style={[s.payIcon, { backgroundColor: palette.primary50 }]}>
+                    <Feather name="plus" size={17} color={palette.primary600} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text variant="bodyMedium">Choose payment method</Text>
+                    <Text variant="caption" color="textTertiary">
+                      UPI, card or net banking — see offers inside
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={palette.gray400} />
+                </>
+              )}
             </Pressable>
-          ))}
-        </View>
 
-        <View style={s.secure}>
-          <Feather name="lock" size={13} color={palette.gray500} />
-          <Text variant="caption" color="textTertiary" style={{ flex: 1 }}>
-            Card and UPI details are collected on the next screen by the payment
-            provider.
-          </Text>
-        </View>
+            <View style={s.secure}>
+              <Feather name="lock" size={13} color={palette.gray500} />
+              <Text variant="caption" color="textTertiary" style={{ flex: 1 }}>
+                Card details stay on this device until you confirm pay. Banking handoff is
+                encrypted.
+              </Text>
+            </View>
+          </>
+        )}
 
         <View style={{ height: spacing.xl }} />
       </ScrollView>
 
-      {/* ── Price breakdown ── */}
-      {priceOpen && passengers.length > 0 && (
+      {priceOpen && (
         <View style={s.breakdown}>
           {quote.lines.map((l) => (
             <View key={l.label} style={s.breakLine}>
@@ -486,67 +775,103 @@ export default function Booking() {
               <Text variant="bodySmall">₹{l.amount.toLocaleString()}</Text>
             </View>
           ))}
+          {paxDone &&
+            applied
+              .filter((a) => a.value > 0)
+              .map((a) => {
+                const opt = redeemOptions.find((o) => o.programId === a.programId);
+                return (
+                  <View key={a.programId} style={s.breakLine}>
+                    <View style={{ flex: 1 }}>
+                      <Text variant="bodySmall">
+                        {opt?.program.programName ?? 'Loyalty'} redemption
+                      </Text>
+                      <Text variant="caption" color="textTertiary">
+                        {a.points.toLocaleString()} points
+                      </Text>
+                    </View>
+                    <Text variant="bodySmall" style={{ color: palette.successDark }}>
+                      −₹{a.value.toLocaleString()}
+                    </Text>
+                  </View>
+                );
+              })}
         </View>
       )}
 
-      {/* ── Pay ── */}
-      <View style={[s.bar, { paddingBottom: insets.bottom + spacing.md }]}>
-        <Pressable
-          style={{ flex: 1 }}
-          onPress={() => {
-            animate();
-            setPriceOpen((v) => !v);
-          }}
-          disabled={passengers.length === 0}
-        >
-          <View style={s.totalRow}>
-            <Text variant="caption" color="textTertiary">
-              Total
-            </Text>
-            {passengers.length > 0 && (
+      <KeyboardBottomPad style={s.barChrome}>
+        <View style={s.bar}>
+          <Pressable
+            style={{ flex: 1 }}
+            onPress={() => {
+              animate();
+              setPriceOpen((v) => !v);
+            }}
+          >
+            <View style={s.totalRow}>
+              <Text variant="caption" color="textTertiary">
+                {!paxDone
+                  ? 'Trip total'
+                  : redeemValue > 0
+                    ? 'You pay'
+                    : 'Total'}
+              </Text>
               <Feather
                 name={priceOpen ? 'chevron-down' : 'chevron-up'}
                 size={13}
                 color={palette.gray500}
               />
+            </View>
+            <Text style={s.total}>₹{payable.toLocaleString()}</Text>
+          </Pressable>
+
+          <Pressable
+            style={[s.pay, paxDone && blocker && s.payBlocked]}
+            onPress={handlePay}
+          >
+            <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
+              {!paxDone
+                ? 'Add passenger details'
+                : blocker
+                  ? 'Continue'
+                  : `Pay ₹${payable.toLocaleString()}`}
+            </Text>
+            {paxDone && !blocker && (
+              <Feather name="arrow-right" size={17} color={palette.white} />
             )}
-          </View>
-          <Text style={s.total}>
-            ₹{passengers.length === 0 ? '—' : quote.total.toLocaleString()}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[s.pay, blocker && s.payBlocked]}
-          onPress={handlePay}
-        >
-          <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
-            {blocker ? 'Continue' : `Pay ₹${quote.total.toLocaleString()}`}
-          </Text>
-          {!blocker && <Feather name="arrow-right" size={17} color={palette.white} />}
-        </Pressable>
-      </View>
-
-      {blocker && attempted && (
-        <View style={[s.blockerBar, { paddingBottom: insets.bottom }]}>
-          <Feather name="alert-circle" size={14} color={palette.white} />
-          <Text variant="caption" style={{ color: palette.white, flex: 1 }}>
-            {blocker.message}
-          </Text>
+          </Pressable>
         </View>
-      )}
 
-      {/* ── Sheets ── */}
+        {attempted && paxDone && blocker && (
+          <View style={s.blockerBar}>
+            <Feather name="alert-circle" size={14} color={palette.white} />
+            <Text variant="caption" style={{ color: palette.white, flex: 1 }}>
+              {blocker.message}
+            </Text>
+          </View>
+        )}
+      </KeyboardBottomPad>
+
       <PassengerSheet
         visible={editing !== null}
         passenger={editing}
         index={editIndex}
-        international={INTERNATIONAL}
-        departISO={DEPART_ISO}
-        onClose={() => setEditing(null)}
+        international={itinerary.international}
+        departISO={itinerary.departISO}
+        onClose={abortPassenger}
         onSave={(p, _doc) => savePassenger(p)}
+        canRemove={
+          !(editing?.primary) &&
+          !!editing &&
+          passengers.some((p) => p.id === editing.id)
+        }
+        allowMakePrimary={
+          !!editing && passengers.some((p) => p.id !== editing.id)
+        }
         onRemove={
-          editing && passengers.some((p) => p.id === editing.id)
+          editing &&
+          !editing.primary &&
+          passengers.some((p) => p.id === editing.id)
             ? removePassenger
             : undefined
         }
@@ -555,11 +880,13 @@ export default function Booking() {
       <SeatSheet
         visible={seatsOpen}
         passengers={passengers}
+        complimentary={itinerary.seatComplimentary}
         onClose={() => setSeatsOpen(false)}
         onApply={(next) => {
           animate();
           setPassengers(next);
           setSeatsOpen(false);
+          setSeatNudgeDismissed(true);
         }}
       />
 
@@ -574,30 +901,26 @@ export default function Booking() {
           setExtras(null);
         }}
       />
+
+      <BookingPaymentSheet
+        visible={payOpen}
+        selected={payment}
+        onClose={() => setPayOpen(false)}
+        onSelect={(next) => {
+          animate();
+          setPayment(next);
+          setPayOpen(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
-
-// ─── Small pieces ────────────────────────────────────────
 
 function SectionLabel({ children }: { children: string }) {
   return (
     <Text variant="label" color="textTertiary" style={s.sectionLabel}>
       {children}
     </Text>
-  );
-}
-
-function DetailLine({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={s.detailLine}>
-      <Text variant="caption" color="textTertiary" style={{ width: 80 }}>
-        {label}
-      </Text>
-      <Text variant="caption" style={{ flex: 1 }}>
-        {value}
-      </Text>
-    </View>
   );
 }
 
@@ -619,6 +942,8 @@ function ExtraRow({
   fallback,
   onPress,
   last,
+  highlight,
+  locked,
 }: {
   icon: string;
   label: string;
@@ -626,32 +951,52 @@ function ExtraRow({
   fallback: string;
   onPress: () => void;
   last?: boolean;
+  highlight?: boolean;
+  locked?: boolean;
 }) {
   return (
     <Pressable
-      style={[s.extraRow, last && { borderBottomWidth: 0 }]}
+      style={[
+        s.extraRow,
+        last && { borderBottomWidth: 0 },
+        highlight && s.extraRowHighlight,
+      ]}
       onPress={onPress}
+      disabled={locked}
     >
-      <View style={s.extraIcon}>
-        <Feather name={icon as never} size={17} color={palette.gray600} />
+      <View style={[s.extraIcon, highlight && { backgroundColor: palette.primary100 }]}>
+        <Feather
+          name={icon as never}
+          size={17}
+          color={highlight ? palette.primary600 : palette.gray600}
+        />
       </View>
       <View style={{ flex: 1 }}>
         <Text variant="bodyMedium">{label}</Text>
         <Text
           variant="caption"
-          style={{ color: value ? palette.primary600 : palette.gray500 }}
+          style={{
+            color: value || highlight ? palette.primary600 : palette.gray500,
+          }}
           numberOfLines={1}
         >
           {value ?? fallback}
         </Text>
       </View>
-      <View style={s.extraAction}>
-        <Feather
-          name={value ? 'edit-2' : 'plus'}
-          size={15}
-          color={palette.primary600}
-        />
-      </View>
+      {!locked && (
+        <View style={s.extraAction}>
+          <Feather
+            name={value ? 'edit-2' : 'plus'}
+            size={15}
+            color={palette.primary600}
+          />
+        </View>
+      )}
+      {locked && (
+        <Text variant="caption" style={{ color: palette.successDark, fontWeight: '600' }}>
+          Included
+        </Text>
+      )}
     </Pressable>
   );
 }
@@ -678,38 +1023,38 @@ const s = StyleSheet.create({
 
   scroll: { paddingHorizontal: HPAD, paddingTop: spacing.md },
 
-  // Flight
-  flight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: palette.gray50,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    minHeight: 64,
-  },
-  airline: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  flightDetail: {
-    backgroundColor: palette.gray50,
-    borderBottomLeftRadius: radii.md,
-    borderBottomRightRadius: radii.md,
-    marginTop: -spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
-  },
-  detailLine: { flexDirection: 'row', paddingVertical: 4 },
-
   sectionLabel: { letterSpacing: 1, marginTop: spacing.xl, marginBottom: spacing.sm },
   sectionNote: { marginTop: -spacing.xs, marginBottom: spacing.md },
 
-  // Passengers
+  nextHint: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    backgroundColor: palette.gray50,
+    borderRadius: radii.md,
+  },
+  seatNudge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    backgroundColor: palette.primary50,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: palette.primary200,
+  },
+  seatNudgeBtn: {
+    backgroundColor: palette.primary500,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+  },
+  seatNudgeBtnText: { color: palette.white, fontWeight: '600', fontSize: 13 },
+  seatNudgeDismiss: { padding: 4 },
+
   empty: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -744,6 +1089,19 @@ const s = StyleSheet.create({
     minHeight: 68,
   },
   passengerBlocked: { borderColor: palette.warning, backgroundColor: palette.warningLight },
+  paxNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  primaryBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radii.full,
+    backgroundColor: palette.primary50,
+  },
+  primaryBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: palette.primary700,
+    letterSpacing: 0.2,
+  },
   pIndex: {
     width: 30,
     height: 30,
@@ -769,7 +1127,6 @@ const s = StyleSheet.create({
     minHeight: 48,
   },
 
-  // Extras
   extras: {
     borderWidth: 1,
     borderColor: palette.gray200,
@@ -785,6 +1142,7 @@ const s = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: palette.gray200,
   },
+  extraRowHighlight: { backgroundColor: palette.primary50 },
   extraIcon: {
     width: 36,
     height: 36,
@@ -802,7 +1160,6 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Contact
   field: { marginBottom: spacing.md },
   input: {
     ...typography.body,
@@ -828,7 +1185,6 @@ const s = StyleSheet.create({
   phoneInput: { flex: 1 },
   errorLine: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
 
-  // Payment
   payRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -837,6 +1193,17 @@ const s = StyleSheet.create({
     minHeight: 68,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: palette.gray200,
+  },
+  paySelected: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    minHeight: 72,
+    borderWidth: 1,
+    borderColor: palette.gray200,
+    borderRadius: radii.md,
+    backgroundColor: palette.white,
   },
   payIcon: {
     width: 36,
@@ -864,7 +1231,17 @@ const s = StyleSheet.create({
     marginTop: spacing.md,
   },
 
-  // Breakdown
+  loyaltyEmpty: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  loyaltyHint: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+
   breakdown: {
     backgroundColor: palette.gray50,
     paddingHorizontal: HPAD,
@@ -878,29 +1255,34 @@ const s = StyleSheet.create({
     paddingVertical: 5,
   },
 
-  // Pay bar
+  barChrome: {
+    backgroundColor: palette.white,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: palette.gray200,
+    ...shadows.floating,
+  },
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     paddingHorizontal: HPAD,
     paddingTop: spacing.md,
-    backgroundColor: palette.white,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: palette.gray200,
-    ...shadows.floating,
+    paddingBottom: spacing.sm,
   },
   totalRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  total: { fontSize: 22, fontWeight: '700', color: palette.gray900, lineHeight: 27 },
+  total: {
+    ...typography.h2,
+    color: palette.gray900,
+    marginTop: 2,
+  },
   pay: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     backgroundColor: palette.primary500,
+    borderRadius: radii.full,
     paddingHorizontal: spacing.lg,
     minHeight: 52,
-    borderRadius: radii.full,
-    justifyContent: 'center',
   },
   payBlocked: { backgroundColor: palette.gray400 },
 
@@ -910,16 +1292,14 @@ const s = StyleSheet.create({
     gap: spacing.sm,
     backgroundColor: palette.warningDark,
     paddingHorizontal: HPAD,
-    paddingTop: spacing.sm,
+    paddingVertical: spacing.sm,
   },
 
-  // Confirmation
   done: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: HPAD,
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   doneIcon: {
     width: 64,
@@ -928,25 +1308,32 @@ const s = StyleSheet.create({
     backgroundColor: palette.success,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.md,
+    alignSelf: 'center',
+    marginBottom: spacing.sm,
+  },
+  doneCard: {
+    backgroundColor: palette.gray50,
+    borderRadius: radii.md,
+    padding: spacing.lg,
+    marginTop: spacing.md,
+  },
+  earnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: palette.gray200,
   },
   doneCta: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    alignSelf: 'stretch',
-    minHeight: 52,
+    gap: 8,
     backgroundColor: palette.primary500,
     borderRadius: radii.full,
+    minHeight: 52,
     marginTop: spacing.lg,
-  },
-  doneCard: {
-    alignSelf: 'stretch',
-    borderWidth: 1,
-    borderColor: palette.gray200,
-    borderRadius: radii.lg,
-    padding: spacing.lg,
-    marginTop: spacing.xl,
   },
 });

@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Dimensions,
   Animated,
+  Easing,
   LayoutAnimation,
   NativeSyntheticEvent,
   NativeScrollEvent,
@@ -14,10 +15,19 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { Text } from '../components/ui';
-import { palette, spacing, radii } from '../constants/tokens';
-import { LocationSheet } from '../components/LocationSheet';
-import { DestinationSheet } from '../components/DestinationSheet';
+import { Text } from '../../components/ui';
+import { layout, palette, spacing, radii } from '../../constants/tokens';
+import { LocationSheet } from '../../components/LocationSheet';
+import { DestinationSheet } from '../../components/DestinationSheet';
+import { PaxSheet } from '../../components/PaxSheet';
+import { GlowingPaxButton } from '../../components/GlowingPaxButton';
+import { WeatherPill } from '../../components/WeatherIcon';
+import { TabScreenEnter } from '../../components/TabScreenEnter';
+import {
+  SearchMorphOverlay,
+  type SearchBarRect,
+} from '../../components/SearchMorphOverlay';
+import { defaultPax, type PaxMix } from '../../lib/flightRules';
 import {
   weekendEscapes,
   dealsNow,
@@ -25,10 +35,11 @@ import {
   formatFlightTime,
   type Destination,
   type NearbyAirport,
-} from '../data/destinations';
+} from '../../data/destinations';
+import { homeWeather } from '../../data/weather';
 
 const { width: SW } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 const GRID_GAP = 12;
 const CARD_W = (SW - HPAD * 2 - GRID_GAP) / 2;
 const DEAL_W = 168;
@@ -82,10 +93,48 @@ export default function Home() {
   const [locationOpen, setLocationOpen] = useState(false);
   const [destination, setDestination] = useState<Destination | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pax, setPax] = useState<PaxMix>(defaultPax);
+  const [paxOpen, setPaxOpen] = useState(false);
+  const [morphFrom, setMorphFrom] = useState<SearchBarRect | null>(null);
+  const [morphing, setMorphing] = useState(false);
 
   const pinned = useRef(new Animated.Value(0)).current;
+  const homeFade = useRef(new Animated.Value(1)).current;
   const isPinned = useRef(false);
+  const [headerScrolled, setHeaderScrolled] = useState(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchBarRef = useRef<View>(null);
+  const morphLock = useRef(false);
+
+  const openAirportSearch = useCallback(() => {
+    if (morphLock.current) return;
+    morphLock.current = true;
+    searchBarRef.current?.measureInWindow((x, y, width, height) => {
+      setMorphFrom({ x, y, width, height });
+      setMorphing(true);
+      // Fade all home chrome first — no jarring expand over live content
+      Animated.timing(homeFade, {
+        toValue: 0,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [homeFade]);
+
+  const onMorphNavigate = useCallback(() => {
+    router.push({ pathname: '/airport-search', params: { morph: '1' } });
+  }, [router]);
+
+  const onMorphFinished = useCallback(() => {
+    setMorphing(false);
+    setMorphFrom(null);
+    // Keep home faded while it sits under the stack; restore for back nav
+    requestAnimationFrame(() => {
+      homeFade.setValue(1);
+      morphLock.current = false;
+    });
+  }, [homeFade]);
 
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -93,6 +142,7 @@ export default function Home() {
       const should = y > PIN_AT;
       if (should !== isPinned.current) {
         isPinned.current = should;
+        setHeaderScrolled(should);
         Animated.spring(pinned, {
           toValue: should ? 1 : 0,
           useNativeDriver: true,
@@ -115,90 +165,150 @@ export default function Home() {
   }, []);
 
   const chipOpacity = pinned;
+  const weatherOpacity = pinned.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
   const chipShift = pinned.interpolate({
     inputRange: [0, 1],
-    outputRange: [8, 0],
+    outputRange: [6, 0],
+  });
+  const weatherShift = pinned.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -6],
   });
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-      {/* ── Greeting ── */}
-      <View style={s.greeting}>
-        <Pressable style={s.profile} onPress={() => router.push('/account')}>
-          <View style={s.avatar}>
-            <Text variant="caption" style={{ color: palette.white, fontWeight: '700' }}>
-              RM
+      <TabScreenEnter variant="explore" backgroundColor={palette.white}>
+      <Animated.View style={[s.fadeRoot, { opacity: homeFade }]}>
+        {/* ── Greeting: name left · weather/location swap + bell right ── */}
+        <View style={s.greeting}>
+          <Pressable style={s.profile} onPress={() => router.navigate('/account')}>
+            <View style={s.avatar}>
+              <Text variant="caption" style={{ color: palette.white, fontWeight: '700' }}>
+                RM
+              </Text>
+            </View>
+            <Text variant="bodySmall">Hello, Ramesh</Text>
+          </Pressable>
+
+          <View style={s.greetingRight}>
+            {/* Same slot: weather by default, location chip after scroll */}
+            <View style={s.swapSlot}>
+              <Animated.View
+                style={[
+                  s.swapItem,
+                  {
+                    opacity: weatherOpacity,
+                    transform: [{ translateY: weatherShift }],
+                  },
+                ]}
+                pointerEvents={headerScrolled ? 'none' : 'auto'}
+              >
+                <WeatherPill
+                  weather={homeWeather(origin.city, origin.iata)}
+                  onPress={() => {
+                    const wx = homeWeather(origin.city, origin.iata);
+                    showNotice(`${origin.city}: ${wx.tempC}° · ${wx.label}`);
+                  }}
+                />
+              </Animated.View>
+              <Animated.View
+                style={[
+                  s.swapItem,
+                  {
+                    opacity: chipOpacity,
+                    transform: [{ translateY: chipShift }],
+                  },
+                ]}
+                pointerEvents={headerScrolled ? 'auto' : 'none'}
+              >
+                <Pressable style={s.originChip} onPress={() => setLocationOpen(true)}>
+                  <Feather name="map-pin" size={12} color={palette.primary600} />
+                  <Text
+                    variant="caption"
+                    style={{ color: palette.primary700, fontWeight: '600' }}
+                  >
+                    {origin.iata}
+                  </Text>
+                </Pressable>
+              </Animated.View>
+            </View>
+
+            <Pressable
+              style={s.iconBtn}
+              onPress={() => showNotice('No new alerts')}
+            >
+              <Feather name="bell" size={18} color={palette.gray600} />
+            </Pressable>
+          </View>
+        </View>
+
+        {notice && (
+          <View style={s.notice}>
+            <Feather name="info" size={14} color={palette.gray600} />
+            <Text variant="caption" color="textSecondary" style={{ flex: 1 }}>
+              {notice}
             </Text>
           </View>
-          <Text variant="bodySmall">Hello, Ramesh</Text>
-        </Pressable>
+        )}
 
-        <View style={s.greetingRight}>
-          {/* Origin chip appears once the main pill scrolls away */}
-          <Animated.View
-            style={{ opacity: chipOpacity, transform: [{ translateY: chipShift }] }}
-            pointerEvents="box-none"
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          scrollEnabled={!morphing}
+        >
+          {/* ── Origin ── */}
+          <Pressable style={s.originPill} onPress={() => setLocationOpen(true)}>
+            <Feather name="map-pin" size={14} color={palette.primary600} />
+            <Text variant="bodySmall" color="textSecondary">
+              Flying from{' '}
+              <Text variant="bodySmall" style={{ fontWeight: '600', color: palette.gray900 }}>
+                {origin.city} ({origin.iata})
+              </Text>
+            </Text>
+            <Feather name="chevron-down" size={14} color={palette.gray500} />
+          </Pressable>
+
+          {/* ── Hero ── */}
+          <Text variant="display" align="center" style={s.hero}>
+            Where are you{'\n'}flying next?
+          </Text>
+
+          {/* Spacer keeps layout while the real pill is cloned into the overlay */}
+          <View
+            ref={searchBarRef}
+            collapsable={false}
+            style={[s.search, morphing && s.searchHidden]}
           >
-            <Pressable style={s.originChip} onPress={() => setLocationOpen(true)}>
-              <Feather name="map-pin" size={12} color={palette.primary600} />
-              <Text variant="caption" style={{ color: palette.primary700, fontWeight: '600' }}>
-                {origin.iata}
+            <GlowingPaxButton onPress={() => setPaxOpen(true)} />
+
+            <Pressable
+              style={s.searchField}
+              onPress={openAirportSearch}
+              accessibilityRole="button"
+              accessibilityLabel="Search airports"
+            >
+              <Feather name="search" size={18} color={palette.gray400} />
+              <Text variant="body" color="textTertiary" style={{ flex: 1 }}>
+                Where to next?
               </Text>
             </Pressable>
-          </Animated.View>
 
-          <Pressable
-            style={s.iconBtn}
-            onPress={() => showNotice('No new alerts')}
-          >
-            <Feather name="bell" size={18} color={palette.gray600} />
-          </Pressable>
-        </View>
-      </View>
-
-      {notice && (
-        <View style={s.notice}>
-          <Feather name="info" size={14} color={palette.gray600} />
-          <Text variant="caption" color="textSecondary" style={{ flex: 1 }}>
-            {notice}
-          </Text>
-        </View>
-      )}
-
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={s.scroll}
-        showsVerticalScrollIndicator={false}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-      >
-        {/* ── Origin ── */}
-        <Pressable style={s.originPill} onPress={() => setLocationOpen(true)}>
-          <Feather name="map-pin" size={14} color={palette.primary600} />
-          <Text variant="bodySmall" color="textSecondary">
-            Flying from{' '}
-            <Text variant="bodySmall" style={{ fontWeight: '600', color: palette.gray900 }}>
-              {origin.city} ({origin.iata})
-            </Text>
-          </Text>
-          <Feather name="chevron-down" size={14} color={palette.gray500} />
-        </Pressable>
-
-        {/* ── Hero ── */}
-        <Text variant="display" align="center" style={s.hero}>
-          Where are you{'\n'}flying next?
-        </Text>
-
-        {/* ── Search: the one primary action ── */}
-        <Pressable style={s.search} onPress={() => router.push('/airport-search')}>
-          <Feather name="search" size={20} color={palette.gray400} />
-          <Text variant="body" color="textTertiary" style={{ flex: 1 }}>
-            Search a city or airport
-          </Text>
-          <View style={s.searchGo}>
-            <Feather name="arrow-right" size={18} color={palette.white} />
+            <Pressable
+              style={s.searchGo}
+              onPress={openAirportSearch}
+              accessibilityRole="button"
+              accessibilityLabel="Go to airport search"
+              hitSlop={4}
+            >
+              <Feather name="arrow-right" size={18} color={palette.white} />
+            </Pressable>
           </View>
-        </Pressable>
 
         {/* ── Deals ── */}
         <View style={s.sectionHead}>
@@ -208,6 +318,18 @@ export default function Home() {
               Below their usual price from {origin.iata}
             </Text>
           </View>
+          <Pressable
+            onPress={() =>
+              router.push({ pathname: '/destinations', params: { tab: 'all' } })
+            }
+            hitSlop={8}
+            accessibilityRole="link"
+            accessibilityLabel="View all good fares"
+          >
+            <Text variant="bodySmall" style={s.viewAll}>
+              View all
+            </Text>
+          </Pressable>
         </View>
 
         <ScrollView
@@ -258,6 +380,18 @@ export default function Home() {
               Close enough to leave Friday and be back Sunday
             </Text>
           </View>
+          <Pressable
+            onPress={() =>
+              router.push({ pathname: '/destinations', params: { tab: 'weekend' } })
+            }
+            hitSlop={8}
+            accessibilityRole="link"
+            accessibilityLabel="View all weekend escapes"
+          >
+            <Text variant="bodySmall" style={s.viewAll}>
+              View all
+            </Text>
+          </Pressable>
         </View>
 
         <View style={s.grid}>
@@ -298,14 +432,8 @@ export default function Home() {
 
         <View style={{ height: spacing.lg }} />
       </ScrollView>
-
-      {/* ── Tabs ── */}
-      <View style={s.tabs}>
-        <Tab icon="compass" label="Explore" active onPress={() => {}} />
-        <Tab icon="map" label="Trips" onPress={() => router.push('/trips')} />
-        <Tab icon="heart" label="Saved" onPress={() => showNotice('Saved arrives in a later release')} />
-        <Tab icon="user" label="Account" onPress={() => router.push('/account')} />
-      </View>
+      </Animated.View>
+      </TabScreenEnter>
 
       {/* ── Sheets ── */}
       <LocationSheet
@@ -328,34 +456,32 @@ export default function Home() {
           router.push('/flights');
         }}
       />
-    </SafeAreaView>
-  );
-}
 
-function Tab({
-  icon,
-  label,
-  active,
-  onPress,
-}: {
-  icon: string;
-  label: string;
-  active?: boolean;
-  onPress: () => void;
-}) {
-  const tint = active ? palette.primary500 : palette.gray400;
-  return (
-    <Pressable style={s.tab} onPress={onPress}>
-      <Feather name={icon as never} size={21} color={tint} />
-      <Text variant="caption" style={{ color: tint, marginTop: 3 }}>
-        {label}
-      </Text>
-    </Pressable>
+      <PaxSheet
+        visible={paxOpen}
+        pax={pax}
+        onClose={() => setPaxOpen(false)}
+        onApply={(next) => {
+          setPax(next);
+          setPaxOpen(false);
+          // Continue into booking: airport → dates → flights
+          setTimeout(() => openAirportSearch(), 220);
+        }}
+      />
+
+      <SearchMorphOverlay
+        visible={morphing}
+        from={morphFrom}
+        onNavigate={onMorphNavigate}
+        onFinished={onMorphFinished}
+      />
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: palette.white },
+  fadeRoot: { flex: 1 },
 
   // Greeting
   greeting: {
@@ -364,6 +490,7 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: HPAD,
     paddingVertical: spacing.sm,
+    gap: spacing.md,
   },
   profile: {
     flexDirection: 'row',
@@ -375,6 +502,7 @@ const s = StyleSheet.create({
     paddingRight: spacing.md,
     paddingVertical: spacing.xs,
     minHeight: 48,
+    flexShrink: 0,
   },
   avatar: {
     width: 38,
@@ -384,7 +512,26 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  greetingRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  greetingRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexShrink: 0,
+  },
+  /** Weather and location chip share one slot so the name never truncates. */
+  swapSlot: {
+    minWidth: 108,
+    height: 44,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  swapItem: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
   originChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -393,6 +540,7 @@ const s = StyleSheet.create({
     borderRadius: radii.full,
     paddingHorizontal: spacing.md,
     paddingVertical: 9,
+    minHeight: 40,
   },
   iconBtn: {
     width: 44,
@@ -432,22 +580,40 @@ const s = StyleSheet.create({
 
   hero: { marginTop: spacing.lg, marginBottom: spacing.xl },
 
-  // Search
+  // Search — soft float, passenger glow is on GlowingPaxButton
   search: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: palette.white,
+    borderRadius: radii.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.06)',
+    paddingLeft: 6,
+    paddingRight: 6,
+    paddingVertical: 6,
+    minHeight: 58,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.055,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  searchHidden: {
+    opacity: 0,
+  },
+  searchField: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: palette.gray50,
-    borderRadius: radii.xl,
-    paddingLeft: spacing.md,
-    paddingRight: spacing.xs,
-    paddingVertical: spacing.xs,
-    minHeight: 60,
+    paddingHorizontal: spacing.xs,
+    minHeight: 44,
   },
   searchGo: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: palette.primary500,
     alignItems: 'center',
     justifyContent: 'center',
@@ -458,6 +624,12 @@ const s = StyleSheet.create({
     alignItems: 'flex-end',
     marginTop: spacing.xl,
     marginBottom: spacing.md,
+    gap: spacing.md,
+  },
+  viewAll: {
+    color: palette.primary600,
+    fontWeight: '600',
+    marginBottom: 2,
   },
 
   // Deals
@@ -547,23 +719,4 @@ const s = StyleSheet.create({
     color: palette.white,
   },
   gridPrice: { marginTop: spacing.sm },
-
-  // Tabs
-  tabs: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: palette.gray200,
-    backgroundColor: palette.white,
-  },
-  tab: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 64,
-    minHeight: 48,
-    paddingVertical: spacing.xs,
-  },
 });

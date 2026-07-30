@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
-import { palette, spacing, radii } from '../constants/tokens';
+import { layout, palette, spacing, radii } from '../constants/tokens';
 import {
   meals,
   baggage,
@@ -279,7 +279,7 @@ const s = StyleSheet.create({
   tabs: {
     flexDirection: 'row',
     gap: 6,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.md,
   },
   tab: {
@@ -296,7 +296,7 @@ const s = StyleSheet.create({
   tabOn: { backgroundColor: palette.gray900, borderColor: palette.gray900 },
   dot: { width: 6, height: 6, borderRadius: 3 },
 
-  body: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
+  body: { paddingHorizontal: layout.screenPadding, paddingTop: spacing.lg, paddingBottom: spacing.xl },
 
   notice: {
     flexDirection: 'row',

@@ -11,15 +11,17 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
-import { palette, spacing, radii, shadows } from '../constants/tokens';
+import { layout, palette, spacing, radii, shadows } from '../constants/tokens';
 import { mockFlights, dateStrip, type MockFlight } from '../data/flights';
 import { FlightCard } from '../components/FlightCard';
 import { FareSheet } from '../components/FareSheet';
 import { FlightCompareSheet } from '../components/FlightCompareSheet';
 import { AssistFab, AssistSheet } from '../components/DecisionAssist';
 import { PaxSheet } from '../components/PaxSheet';
+import { PaxFlatButton } from '../components/PaxFlatButton';
 import {
   FilterSheet,
   emptyFlightFilters,
@@ -38,18 +40,32 @@ import {
   describePax,
   type PaxMix,
 } from '../lib/flightRules';
+import { serializeOneWaySnapshot, perksFromFareClass } from '../data/bookingItinerary';
+import type { FareClass } from '../data/fares';
 
 const { width: SW } = Dimensions.get('window');
-const HPAD = spacing.lg;
+const HPAD = layout.screenPadding;
 
-const HEADER_H = 62;
-const DATE_H = 78;
+/** Fewer chips on screen; the rest scroll week by week. */
+const DATES_VISIBLE = 5;
+const DATE_CHIP_W = (SW - HPAD * 2) / DATES_VISIBLE;
+const DATE_CHIP_GAP = 0;
+
+const HEADER_H = 64;
+const MONTH_H = 26;
+const DATE_H = 82;
 const FILTER_H = 60;
-const CHROME_H = DATE_H + FILTER_H;
+const CHROME_BASE = DATE_H + FILTER_H;
 
 const MAX_COMPARE = 3;
 const HESITATION_THRESHOLD = 4;
 const HESITATION_DELAY = 28000;
+/** Near top — only then do dates/filters return. */
+const TOP_RESTORE_Y = 28;
+/** Past this, scrolling down collapses the date chrome. */
+const COLLAPSE_Y = 56;
+
+const BASE_MONTH_KEY = `${dateStrip[0].monthFull}-${dateStrip[0].year}`;
 
 type SortMode = 'price' | 'stops' | 'time';
 
@@ -62,9 +78,36 @@ const PICK_META: Record<
   fastest: { label: 'Fastest', color: palette.infoDark, bg: palette.infoLight, icon: 'trending-up' },
 };
 
+function formatHeaderDate(d: (typeof dateStrip)[number]) {
+  const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const wd = weekdays[new Date(`${d.full}T12:00:00`).getDay()];
+  return `${wd}, ${d.date} ${d.month}`;
+}
+
+function monthKey(d: (typeof dateStrip)[number]) {
+  return `${d.monthFull}-${d.year}`;
+}
+
+function monthBanner(d: (typeof dateStrip)[number]) {
+  return `${d.monthFull.toUpperCase()} ${d.year}`;
+}
+
+function initialDateIndex(depart?: string): number {
+  if (!depart) return 0;
+  const i = dateStrip.findIndex((d) => d.full === depart);
+  return i >= 0 ? i : 0;
+}
+
 export default function Flights() {
+  const router = useRouter();
+  const { city, depart } = useLocalSearchParams<{
+    to?: string;
+    city?: string;
+    depart?: string;
+  }>();
+  const destinationCity = city ?? 'Bengaluru';
   const [pax, setPax] = useState<PaxMix>(defaultPax);
-  const [dateIndex, setDateIndex] = useState(0);
+  const [dateIndex, setDateIndex] = useState(() => initialDateIndex(depart));
   const [sortMode, setSortMode] = useState<SortMode>('price');
   const [filters, setFilters] = useState<FlightFilters>(emptyFlightFilters);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -88,14 +131,86 @@ export default function Flights() {
   const [priority, setPriority] = useState<Priority | null>(null);
   const signals = useRef(0);
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dateScrollRef = useRef<ScrollView>(null);
+  const monthPad = useRef(new Animated.Value(0)).current;
+
+  const selectedDate = dateStrip[dateIndex] ?? dateStrip[0];
+  const lowestPrice = useMemo(
+    () => Math.min(...dateStrip.map((d) => d.price)),
+    [],
+  );
+
+  const [monthLabel, setMonthLabel] = useState<string | null>(null);
+
+  const revealMonth = useCallback(
+    (d: (typeof dateStrip)[number]) => {
+      const changed = monthKey(d) !== BASE_MONTH_KEY;
+      setMonthLabel(changed ? monthBanner(d) : null);
+      Animated.timing(monthPad, {
+        toValue: changed ? MONTH_H : 0,
+        duration: 160,
+        useNativeDriver: false,
+      }).start();
+    },
+    [monthPad],
+  );
+
+  const onDateScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const x = e.nativeEvent.contentOffset.x;
+      const idx = Math.max(
+        0,
+        Math.min(dateStrip.length - 1, Math.round(x / DATE_CHIP_W)),
+      );
+      revealMonth(dateStrip[idx]);
+    },
+    [revealMonth],
+  );
+
+  const selectDate = useCallback(
+    (i: number) => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setDateIndex(i);
+      revealMonth(dateStrip[i]);
+      dateScrollRef.current?.scrollTo({
+        x: Math.max(0, (i - Math.floor(DATES_VISIBLE / 2)) * DATE_CHIP_W),
+        animated: true,
+      });
+    },
+    [revealMonth],
+  );
 
   // ── Chrome animation ──
+  // collapse: 0 = dates/filters/month visible, 1 = fully hidden
+  // pill: 0 = sort visible, 120 = sort off-screen
   const collapse = useRef(new Animated.Value(0)).current;
   const chrome = useRef(new Animated.Value(0)).current;
   const pill = useRef(new Animated.Value(0)).current;
   const lastY = useRef(0);
   const lastDir = useRef<'up' | 'down'>('up');
+  const collapseTarget = useRef(0);
   const idle = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const chromeContentH = Animated.add(
+    new Animated.Value(CHROME_BASE),
+    monthPad,
+  );
+  const openFactor = collapse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
+  const compareHide = chrome.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
+  const chromeHeight = Animated.multiply(
+    Animated.multiply(openFactor, chromeContentH),
+    compareHide,
+  );
+  const chromeShift = Animated.multiply(
+    collapse,
+    Animated.multiply(chromeContentH, -1),
+  );
 
   const headerHeight = chrome.interpolate({
     inputRange: [0, 1],
@@ -104,14 +219,6 @@ export default function Flights() {
   const headerOpacity = chrome.interpolate({
     inputRange: [0, 0.6, 1],
     outputRange: [1, 0, 0],
-  });
-  const chromeHeight = Animated.multiply(
-    collapse.interpolate({ inputRange: [0, 1], outputRange: [CHROME_H, 0] }),
-    chrome.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
-  );
-  const chromeShift = collapse.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -CHROME_H],
   });
   const compareBarHeight = chrome.interpolate({
     inputRange: [0, 1],
@@ -123,12 +230,15 @@ export default function Flights() {
   });
 
   const runCollapse = useCallback(
-    (to: number) =>
+    (to: number) => {
+      if (collapseTarget.current === to) return;
+      collapseTarget.current = to;
       Animated.timing(collapse, {
         toValue: to,
-        duration: 200,
+        duration: 220,
         useNativeDriver: false,
-      }).start(),
+      }).start();
+    },
     [collapse],
   );
   const runChrome = useCallback(
@@ -145,8 +255,8 @@ export default function Flights() {
       Animated.spring(pill, {
         toValue: to,
         useNativeDriver: true,
-        tension: 80,
-        friction: 12,
+        tension: to === 0 ? 48 : 90,
+        friction: to === 0 ? 12 : 14,
       }).start(),
     [pill],
   );
@@ -157,36 +267,44 @@ export default function Flights() {
       const y = contentOffset.y;
       const maxScroll = Math.max(0, contentSize.height - layoutMeasurement.height);
 
+      // Hide sort while scrolling; wait a beat after stop before it returns
       if (idle.current) clearTimeout(idle.current);
-      idle.current = setTimeout(() => runPill(0), 380);
+      runPill(120);
+      idle.current = setTimeout(() => runPill(0), 1100);
 
-      if (maxScroll < CHROME_H + 140) {
+      if (maxScroll < CHROME_BASE + 140) {
         lastY.current = y;
         return;
       }
 
-      // Rubber-band zones flip direction every frame; ignore them
-      if (y <= 2 || y >= maxScroll - 4) {
-        if (y <= 2 && lastDir.current !== 'up') {
-          lastDir.current = 'up';
-          runCollapse(0);
-        }
+      // At the very top — restore date chrome
+      if (y <= TOP_RESTORE_Y) {
+        lastDir.current = 'up';
+        runCollapse(0);
+        lastY.current = y;
+        return;
+      }
+
+      // Ignore rubber-band at the bottom
+      if (y >= maxScroll - 4) {
         lastY.current = y;
         return;
       }
 
       const dir =
-        y > lastY.current + 4 ? 'down' : y < lastY.current - 4 ? 'up' : lastDir.current;
+        y > lastY.current + 3 ? 'down' : y < lastY.current - 3 ? 'up' : lastDir.current;
 
       if (dir !== lastDir.current) {
         lastDir.current = dir;
-        if (dir === 'down' && y > 48) {
+        if (dir === 'down' && y > COLLAPSE_Y) {
+          // Hide month + dates + filters; sort stays hidden until idle
           runCollapse(1);
-          runPill(120);
-        } else if (dir === 'up') {
-          runCollapse(0);
         }
+        // Scrolling up mid-list does NOT reopen dates — only TOP_RESTORE_Y does
+      } else if (dir === 'down' && y > COLLAPSE_Y) {
+        runCollapse(1);
       }
+
       lastY.current = y;
     },
     [runCollapse, runPill],
@@ -325,27 +443,27 @@ export default function Flights() {
       >
         <View style={s.header}>
           <View style={s.headerPill}>
-            <Pressable style={s.back} onPress={() => {}} hitSlop={6}>
+            <Pressable
+              style={s.backInPill}
+              onPress={() => {
+                if (router.canGoBack()) router.back();
+              }}
+              hitSlop={6}
+            >
               <Feather name="chevron-left" size={20} color={palette.gray900} />
             </Pressable>
-            <View>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={s.route}>DEL</Text>
-                <Text style={{ color: palette.gray400 }}>{'  ⇄  '}</Text>
-                <Text style={s.route}>BLR</Text>
-              </View>
-              <Text variant="caption" color="textSecondary">
-                Sat, 15 Aug · {shortPax(pax)}
+            <View style={s.headerCopy}>
+              <Text style={s.tripTitle} numberOfLines={1}>
+                <Text style={s.tripCity}>{destinationCity}</Text>
+                <Text style={s.tripSuffix}> Trip</Text>
+              </Text>
+              <Text variant="caption" color="textSecondary" numberOfLines={1}>
+                {formatHeaderDate(selectedDate)}
               </Text>
             </View>
           </View>
 
-          <Pressable style={s.modify} onPress={() => setPaxOpen(true)}>
-            <Text variant="caption" style={{ color: palette.primary600, fontWeight: '700', letterSpacing: 0.8 }}>
-              MODIFY
-            </Text>
-            <Feather name="edit-2" size={14} color={palette.primary600} />
-          </Pressable>
+          <PaxFlatButton pax={pax} onPress={() => setPaxOpen(true)} />
         </View>
       </Animated.View>
 
@@ -374,26 +492,44 @@ export default function Flights() {
         </View>
       </Animated.View>
 
-      {/* ── Dates + filters ── */}
+      {/* ── Month + dates + filters (collapse together) ── */}
       <Animated.View style={[s.chromeWrap, { height: chromeHeight }]}>
         <Animated.View style={{ transform: [{ translateY: chromeShift }] }}>
-          {/* Dates */}
-          <View style={s.dateStrip}>
+          <Animated.View style={[s.monthRow, { height: monthPad }]}>
+            {monthLabel ? (
+              <Text style={s.monthLabel}>{monthLabel}</Text>
+            ) : null}
+          </Animated.View>
+
+          <ScrollView
+            ref={dateScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            decelerationRate="fast"
+            snapToInterval={DATE_CHIP_W + DATE_CHIP_GAP}
+            snapToAlignment="start"
+            disableIntervalMomentum
+            onScroll={onDateScroll}
+            scrollEventThrottle={16}
+            contentContainerStyle={s.dateStrip}
+            style={s.dateScroll}
+          >
             {dateStrip.map((d, i) => {
               const on = i === dateIndex;
+              const lowest = d.price === lowestPrice;
               return (
                 <Pressable
                   key={d.full}
-                  style={[s.dateChip, { width: (SW - HPAD * 2) / 7 }, on && s.dateChipOn]}
-                  onPress={() => {
-                    animate();
-                    setDateIndex(i);
-                  }}
+                  style={[s.dateChip, { width: DATE_CHIP_W }, on && s.dateChipOn]}
+                  onPress={() => selectDate(i)}
                 >
                   <Text
                     variant="caption"
                     align="center"
-                    style={{ color: on ? palette.white : palette.gray500, fontWeight: '500' }}
+                    style={{
+                      color: on ? 'rgba(255,255,255,0.85)' : palette.gray500,
+                      fontWeight: '500',
+                    }}
                   >
                     {d.day}
                   </Text>
@@ -406,14 +542,21 @@ export default function Flights() {
                   <Text
                     variant="caption"
                     align="center"
-                    style={{ color: on ? 'rgba(255,255,255,0.85)' : palette.warning }}
+                    style={{
+                      color: on
+                        ? 'rgba(255,255,255,0.9)'
+                        : lowest
+                          ? palette.success
+                          : palette.warning,
+                      fontWeight: lowest || on ? '600' : '400',
+                    }}
                   >
                     ₹{(d.price / 1000).toFixed(1)}k
                   </Text>
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
 
           {/* Filters */}
           <View style={s.filterRow}>
@@ -429,13 +572,18 @@ export default function Flights() {
                 onPress={enterCompare}
               />
               <QuickChip
-                icon="rotate-ccw"
-                label="Refundable"
-                active={filters.refundable}
+                icon="coffee"
+                label="Meal included"
+                active={filters.amenities.has('meal')}
                 onPress={() => {
                   animate();
                   noteSignal();
-                  setFilters((f) => ({ ...f, refundable: !f.refundable }));
+                  setFilters((f) => {
+                    const amenities = new Set(f.amenities);
+                    if (amenities.has('meal')) amenities.delete('meal');
+                    else amenities.add('meal');
+                    return { ...f, amenities };
+                  });
                 }}
               />
               <QuickChip
@@ -705,12 +853,14 @@ export default function Flights() {
         onApply={(p, timing) => {
           animate();
           setPriority(p);
+          setFilters((f) => ({
+            ...f,
+            bands:
+              timing === 'any' ? new Set() : new Set([timing]),
+          }));
           setAssistOpen(false);
           setAssistReady(false);
           setAssistHint(false);
-          if (timing !== 'any') {
-            setFilters((f) => ({ ...f, bands: new Set([timing]) }));
-          }
         }}
         onSelectFlight={(f) => {
           setAssistOpen(false);
@@ -746,9 +896,32 @@ export default function Flights() {
         flight={fareFlight}
         visible={fareFlight !== null}
         onClose={() => setFareFlight(null)}
-        onConfirm={(fare, price) => {
-          setConfirmed({ flight: fareFlight!.flightNumber, fare, price });
+        onConfirm={(fare) => {
+          const flight = fareFlight!;
+          setConfirmed({ flight: flight.flightNumber, fare: fare.name, price: fare.price });
           setFareFlight(null);
+          const dateISO = dateStrip[dateIndex]?.full ?? depart ?? dateStrip[0].full;
+          const perks = perksFromFareClass(fare);
+          const trip = serializeOneWaySnapshot(
+            flight,
+            fare.name,
+            fare.price,
+            dateISO,
+            perks,
+            fare.refundable !== 'none',
+            'Delhi',
+            destinationCity,
+          );
+          router.push({
+            pathname: '/booking',
+            params: {
+              trip,
+              adults: String(pax.adults),
+              children: String(pax.children),
+              infants: String(pax.infants),
+              total: String(fare.price),
+            },
+          });
         }}
       />
 
@@ -807,6 +980,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: HPAD,
+    gap: spacing.md,
   },
   headerPill: {
     flexDirection: 'row',
@@ -814,11 +988,16 @@ const s = StyleSheet.create({
     gap: spacing.sm,
     backgroundColor: palette.white,
     borderRadius: radii.full,
-    paddingRight: spacing.lg,
+    borderWidth: 1,
+    borderColor: palette.gray200,
+    paddingRight: spacing.md,
     paddingLeft: 5,
     paddingVertical: 5,
+    minHeight: 52,
+    maxWidth: '82%',
+    flexShrink: 1,
   },
-  back: {
+  backInPill: {
     width: 38,
     height: 38,
     borderRadius: 19,
@@ -826,13 +1005,22 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  route: { fontSize: 18, fontWeight: '700', color: palette.gray900 },
-  modify: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: spacing.sm,
-    minHeight: 48,
+  headerCopy: {
+    flexShrink: 1,
+    justifyContent: 'center',
+    paddingRight: 2,
+  },
+  tripTitle: {
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  tripCity: {
+    fontWeight: '700',
+    color: palette.gray900,
+  },
+  tripSuffix: {
+    fontWeight: '600',
+    color: palette.gray500,
   },
 
   compareBar: { overflow: 'hidden', backgroundColor: palette.gray900, zIndex: 20 },
@@ -859,11 +1047,25 @@ const s = StyleSheet.create({
     borderRadius: radii.sm,
   },
 
+  monthRow: {
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: palette.gray200,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: palette.gray300,
+  },
+  monthLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: palette.gray600,
+    letterSpacing: 1.4,
+  },
+
   chromeWrap: { overflow: 'hidden', backgroundColor: palette.gray50, zIndex: 10 },
+  dateScroll: { height: DATE_H },
   dateStrip: {
-    flexDirection: 'row',
     paddingHorizontal: HPAD,
-    height: DATE_H,
     alignItems: 'center',
   },
   dateChip: {

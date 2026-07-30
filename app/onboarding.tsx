@@ -1,67 +1,76 @@
-import { View, StyleSheet, Dimensions } from 'react-native';
+import { useEffect, useRef } from 'react';
+import {
+  View,
+  StyleSheet,
+  Dimensions,
+  Animated,
+  Easing,
+} from 'react-native';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from '../components/ui';
-import { colors, palette, spacing, radii } from '../constants/tokens';
+import { OnboardingOrbit } from '../components/OnboardingOrbit';
+import { layout, palette, spacing } from '../constants/tokens';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const ORBIT_OUTER = SCREEN_WIDTH * 0.75;
-const ORBIT_INNER = SCREEN_WIDTH * 0.52;
+const { width: SW } = Dimensions.get('window');
+const ORBIT = Math.min(SW * 0.82, 340);
 
 export default function Onboarding() {
+  const router = useRouter();
+  const fade = useRef(new Animated.Value(0)).current;
+  const rise = useRef(new Animated.Value(16)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fade, {
+        toValue: 1,
+        duration: 520,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(rise, {
+        toValue: 0,
+        duration: 520,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fade, rise]);
+
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.container}>
-        {/* ── Illustration ── */}
         <View style={styles.illustration}>
-          {/* Outer orbit ring */}
-          <View style={[styles.orbitRing, styles.outerRing]} />
-          {/* Inner orbit ring */}
-          <View style={[styles.orbitRing, styles.innerRing]} />
-
-          {/* Center avatar */}
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatarBg}>
-              <View style={styles.avatarHead} />
-              <View style={styles.avatarBody} />
-            </View>
-          </View>
-
-          {/* Orbital dots */}
-          <View style={[styles.dot, styles.dotPink, { top: '8%', left: '48%' }]} />
-          <View style={[styles.dot, styles.dotOlive, { top: '38%', left: '4%' }]} />
-          <View style={[styles.dot, styles.dotPinkSmall, { top: '48%', left: '18%' }]} />
-          <View style={[styles.dot, styles.dotTeal, { top: '48%', right: '16%' }]} />
-          <View style={[styles.dot, styles.dotGreen, { top: '65%', left: '28%' }]} />
-
-          {/* Passport icon */}
-          <View style={styles.passportBubble}>
-            <Text style={styles.passportEmoji}>🛂</Text>
-          </View>
+          <OnboardingOrbit size={ORBIT} />
         </View>
 
-        {/* ── Content ── */}
-        <View style={styles.content}>
+        <Animated.View
+          style={[
+            styles.content,
+            { opacity: fade, transform: [{ translateY: rise }] },
+          ]}
+        >
           <Text variant="display" align="center">
             It's all about you{'\n'}and your journey
           </Text>
-
           <Text
             variant="body"
             color="textSecondary"
             align="center"
             style={styles.subtitle}
           >
-            The things should evolve around you.
+            Everything revolves around you — destinations, flights, and the
+            little details of the trip.
           </Text>
-        </View>
+        </Animated.View>
 
-        {/* ── CTA ── */}
-        <Button
-          label="Get started"
-          onPress={() => {}}
-          rounded
-          style={styles.cta}
-        />
+        <View style={styles.ctaWrap}>
+          <Button
+            label="Get started"
+            onPress={() => router.push('/sign-in')}
+            rounded
+          />
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -74,121 +83,25 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
   },
-
-  // ── Illustration ──
   illustration: {
-    flex: 1,
+    flex: 1.15,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: spacing.xl,
+    marginTop: spacing.md,
   },
-  orbitRing: {
-    position: 'absolute',
-    borderRadius: 9999,
-    borderWidth: 1.5,
-  },
-  outerRing: {
-    width: ORBIT_OUTER,
-    height: ORBIT_OUTER,
-    borderColor: palette.gray300,
-    opacity: 0.5,
-    transform: [{ rotate: '-15deg' }],
-  },
-  innerRing: {
-    width: ORBIT_INNER,
-    height: ORBIT_INNER,
-    borderColor: palette.primary200,
-    opacity: 0.6,
-  },
-
-  // Avatar
-  avatarContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#FDEBD0',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  avatarBg: {
-    alignItems: 'center',
-  },
-  avatarHead: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F5C088',
-    marginTop: 8,
-  },
-  avatarBody: {
-    width: 48,
-    height: 28,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    backgroundColor: '#93A8D0',
-    marginTop: 4,
-  },
-
-  // Dots
-  dot: {
-    position: 'absolute',
-    borderRadius: 9999,
-  },
-  dotPink: {
-    width: 28,
-    height: 28,
-    backgroundColor: '#F472B6',
-  },
-  dotPinkSmall: {
-    width: 14,
-    height: 14,
-    backgroundColor: '#F472B6',
-  },
-  dotOlive: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#BDB55D',
-  },
-  dotTeal: {
-    width: 24,
-    height: 24,
-    backgroundColor: '#2DD4BF',
-  },
-  dotGreen: {
-    width: 44,
-    height: 44,
-    backgroundColor: '#16A34A',
-  },
-
-  // Passport bubble
-  passportBubble: {
-    position: 'absolute',
-    top: '20%',
-    right: '4%',
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: palette.primary400,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  passportEmoji: {
-    fontSize: 24,
-  },
-
-  // ── Content ──
   content: {
-    paddingBottom: spacing.xl,
+    // Lift copy away from the CTA
+    paddingBottom: spacing.xxl,
+    marginBottom: spacing.md,
   },
   subtitle: {
     marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
-
-  // ── CTA ──
-  cta: {
+  ctaWrap: {
+    paddingTop: spacing.lg,
     marginBottom: spacing.md,
   },
 });

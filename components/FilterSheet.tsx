@@ -1,39 +1,60 @@
-import { useState, useEffect, useMemo } from 'react';
-import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import {
+  View,
+  ScrollView,
+  Pressable,
+  StyleSheet,
+  PanResponder,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
-import { palette, spacing, radii } from '../constants/tokens';
+import { layout, palette, spacing, radii } from '../constants/tokens';
 import type { MockFlight } from '../data/flights';
-import { BAND_LABEL, BAND_RANGE, getBand, type Band } from './../lib/flightAnalysis';
+import {
+  FILTER_AMENITIES,
+  flightHasAmenity,
+  type AmenityId,
+} from '../lib/flightAmenities';
+import {
+  BAND_LABEL,
+  BAND_RANGE,
+  getBand,
+  type Band,
+} from '../lib/flightAnalysis';
+
+export type { AmenityId };
 
 export interface FlightFilters {
   maxStops: number | null;
-  refundable: boolean;
-  bands: Set<Band>;
+  /** Inclusive floor; null = data minimum */
+  priceMin: number | null;
+  /** Inclusive ceiling; null = data maximum */
+  priceMax: number | null;
   carriers: Set<string>;
-  /** Exclude itineraries booked on separate tickets */
-  noSelfTransfer: boolean;
-  /** Exclude anything landing on a later day */
-  noOvernight: boolean;
+  amenities: Set<AmenityId>;
+  /** Departure time-of-day bands */
+  bands: Set<Band>;
 }
 
 export const emptyFlightFilters = (): FlightFilters => ({
   maxStops: null,
-  refundable: false,
-  bands: new Set<Band>(),
+  priceMin: null,
+  priceMax: null,
   carriers: new Set<string>(),
-  noSelfTransfer: false,
-  noOvernight: false,
+  amenities: new Set<AmenityId>(),
+  bands: new Set<Band>(),
 });
+
+const TIME_BANDS: Band[] = ['early', 'morning', 'afternoon', 'evening', 'night'];
 
 export function countActive(f: FlightFilters): number {
   return (
     (f.maxStops !== null ? 1 : 0) +
-    (f.refundable ? 1 : 0) +
-    f.bands.size +
+    (f.priceMin !== null || f.priceMax !== null ? 1 : 0) +
     f.carriers.size +
-    (f.noSelfTransfer ? 1 : 0) +
-    (f.noOvernight ? 1 : 0)
+    f.amenities.size +
+    f.bands.size
   );
 }
 
@@ -43,17 +64,40 @@ export function applyFlightFilters(
 ): MockFlight[] {
   return flights.filter((flight) => {
     if (f.maxStops !== null && flight.stops > f.maxStops) return false;
-    if (f.refundable && !flight.refundable) return false;
-    if (f.bands.size > 0 && !f.bands.has(getBand(flight.departTime))) return false;
-    if (f.carriers.size > 0 && !flight.carriers.some((c) => f.carriers.has(c.code)))
+    if (f.priceMin !== null && flight.price < f.priceMin) return false;
+    if (f.priceMax !== null && flight.price > f.priceMax) return false;
+    if (
+      f.carriers.size > 0 &&
+      !flight.carriers.some((c) => f.carriers.has(c.code))
+    ) {
       return false;
-    if (f.noSelfTransfer && flight.layovers.some((l) => l.selfTransfer)) return false;
-    if (f.noOvernight && flight.arrivalDayOffset > 0) return false;
+    }
+    for (const a of f.amenities) {
+      if (!flightHasAmenity(flight, a)) return false;
+    }
+    if (f.bands.size > 0 && !f.bands.has(getBand(flight.departTime))) return false;
     return true;
   });
 }
 
-const BANDS: Band[] = ['early', 'morning', 'afternoon', 'evening', 'night'];
+function priceBounds(flights: MockFlight[]): { min: number; max: number } {
+  if (flights.length === 0) return { min: 0, max: 10000 };
+  let min = Infinity;
+  let max = 0;
+  for (const f of flights) {
+    min = Math.min(min, f.price);
+    max = Math.max(max, f.price);
+  }
+  // Round to friendly ₹50 steps
+  min = Math.floor(min / 50) * 50;
+  max = Math.ceil(max / 50) * 50;
+  if (min === max) max = min + 500;
+  return { min, max };
+}
+
+function snapPrice(n: number): number {
+  return Math.round(n / 50) * 50;
+}
 
 export function FilterSheet({
   visible,
@@ -68,10 +112,17 @@ export function FilterSheet({
   onClose: () => void;
   onApply: (next: FlightFilters) => void;
 }) {
+  const bounds = useMemo(() => priceBounds(flights), [flights]);
   const [draft, setDraft] = useState<FlightFilters>(filters);
 
   useEffect(() => {
-    if (visible) setDraft(filters);
+    if (!visible) return;
+    setDraft({
+      ...filters,
+      carriers: new Set(filters.carriers),
+      amenities: new Set(filters.amenities),
+      bands: new Set(filters.bands),
+    });
   }, [visible, filters]);
 
   const carriers = useMemo(() => {
@@ -80,12 +131,13 @@ export function FilterSheet({
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [flights]);
 
+  const low = draft.priceMin ?? bounds.min;
+  const high = draft.priceMax ?? bounds.max;
+
   const matches = useMemo(
     () => applyFlightFilters(flights, draft).length,
     [flights, draft],
   );
-
-  const count = (fn: (f: MockFlight) => boolean) => flights.filter(fn).length;
 
   const toggleSet = <T,>(set: Set<T>, value: T): Set<T> => {
     const next = new Set(set);
@@ -94,20 +146,36 @@ export function FilterSheet({
     return next;
   };
 
+  const setPrice = (nextLow: number, nextHigh: number) => {
+    const lo = Math.min(nextLow, nextHigh);
+    const hi = Math.max(nextLow, nextHigh);
+    setDraft((d) => ({
+      ...d,
+      priceMin: lo <= bounds.min ? null : lo,
+      priceMax: hi >= bounds.max ? null : hi,
+    }));
+  };
+
+  const allCarriersSelected =
+    carriers.length > 0 && carriers.every((c) => draft.carriers.has(c.code));
+  const allAmenitiesSelected = FILTER_AMENITIES.every((a) =>
+    draft.amenities.has(a.id),
+  );
+
   return (
     <Sheet
       visible={visible}
       onClose={onClose}
-      title="Filters"
+      title="Filter"
       subtitle={`${matches} of ${flights.length} flights match`}
-      heightRatio={0.88}
+      heightRatio={0.9}
       footer={
         <View style={s.footer}>
           <Pressable
             style={s.reset}
             onPress={() => setDraft(emptyFlightFilters())}
           >
-            <Text variant="bodySmall" color="textSecondary">
+            <Text variant="bodyMedium" style={{ color: palette.primary600, fontWeight: '600' }}>
               Reset
             </Text>
           </Pressable>
@@ -117,270 +185,467 @@ export function FilterSheet({
             disabled={matches === 0}
           >
             <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
-              {matches === 0 ? 'No matches' : `Show ${matches}`}
+              {matches === 0 ? 'No matches' : 'Apply'}
             </Text>
           </Pressable>
         </View>
       }
     >
-      <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
-        {/* Stops */}
-        <Group title="Stops">
-          <View style={s.chips}>
-            {[
-              { label: 'Direct only', value: 0 },
-              { label: 'Up to 1 stop', value: 1 },
-              { label: 'Any', value: null },
-            ].map((opt) => (
-              <Chip
-                key={String(opt.value)}
-                label={opt.label}
-                count={
-                  opt.value === null
-                    ? flights.length
-                    : count((f) => f.stops <= opt.value!)
-                }
-                active={draft.maxStops === opt.value}
-                onPress={() => setDraft((d) => ({ ...d, maxStops: opt.value }))}
-              />
-            ))}
+      <ScrollView
+        style={{ backgroundColor: palette.gray50 }}
+        contentContainerStyle={s.body}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Price */}
+        <View style={s.card}>
+          <View style={s.cardHead}>
+            <Text variant="bodyMedium" style={{ fontWeight: '700' }}>
+              Price Range
+            </Text>
+            <Text variant="bodySmall" style={{ color: palette.primary600, fontWeight: '600' }}>
+              ₹{low.toLocaleString()} – ₹{high.toLocaleString()}
+            </Text>
           </View>
-        </Group>
+          <DualRangeSlider
+            min={bounds.min}
+            max={bounds.max}
+            low={low}
+            high={high}
+            onChange={setPrice}
+          />
+          <View style={s.rangeEnds}>
+            <Text variant="caption" color="textTertiary">
+              ₹{bounds.min.toLocaleString()}
+            </Text>
+            <Text variant="caption" color="textTertiary">
+              ₹{bounds.max.toLocaleString()}
+            </Text>
+          </View>
+        </View>
 
-        {/* Departure */}
-        <Group title="Departure time">
-          <View style={s.chips}>
-            {BANDS.map((b) => (
-              <Chip
-                key={b}
-                label={BAND_LABEL[b]}
-                sub={BAND_RANGE[b]}
-                count={count((f) => getBand(f.departTime) === b)}
-                active={draft.bands.has(b)}
-                onPress={() =>
-                  setDraft((d) => ({ ...d, bands: toggleSet(d.bands, b) }))
-                }
-              />
-            ))}
+        {/* Stops — compact, from the same reference family */}
+        <View style={s.card}>
+          <Text variant="bodyMedium" style={{ fontWeight: '700', marginBottom: spacing.md }}>
+            Number of Stops
+          </Text>
+          <View style={s.segments}>
+            {[
+              { label: 'Direct', value: 0 },
+              { label: '1 Stop', value: 1 },
+              { label: '2+ Stops', value: 2 },
+            ].map((opt) => {
+              const on = draft.maxStops === opt.value;
+              return (
+                <Pressable
+                  key={opt.label}
+                  style={[s.segment, on && s.segmentOn]}
+                  onPress={() =>
+                    setDraft((d) => ({
+                      ...d,
+                      maxStops: d.maxStops === opt.value ? null : opt.value,
+                    }))
+                  }
+                >
+                  <Text
+                    variant="bodySmall"
+                    style={{
+                      color: on ? palette.primary600 : palette.gray700,
+                      fontWeight: on ? '700' : '500',
+                    }}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
-        </Group>
+        </View>
+
+        {/* Departure time */}
+        <View style={s.card}>
+          <Text variant="bodyMedium" style={{ fontWeight: '700', marginBottom: spacing.md }}>
+            Departure Time
+          </Text>
+          <View style={s.timeGrid}>
+            {TIME_BANDS.map((b) => {
+              const on = draft.bands.has(b);
+              return (
+                <Pressable
+                  key={b}
+                  style={[s.timeCard, on && s.timeCardOn]}
+                  onPress={() =>
+                    setDraft((d) => ({ ...d, bands: toggleSet(d.bands, b) }))
+                  }
+                >
+                  <Text
+                    variant="bodySmall"
+                    style={{
+                      fontWeight: '700',
+                      color: on ? palette.primary700 : palette.gray900,
+                    }}
+                  >
+                    {BAND_LABEL[b]}
+                  </Text>
+                  <Text
+                    variant="caption"
+                    style={{ color: on ? palette.primary600 : palette.gray500 }}
+                  >
+                    {BAND_RANGE[b]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
 
         {/* Airlines */}
-        <Group title="Airlines">
-          <View style={s.chips}>
-            {carriers.map((c) => (
-              <Chip
-                key={c.code}
-                label={c.name}
-                count={count((f) => f.carriers.some((x) => x.code === c.code))}
-                active={draft.carriers.has(c.code)}
-                dotColor={c.color}
+        <View style={s.card}>
+          <View style={s.cardHead}>
+            <Text variant="bodyMedium" style={{ fontWeight: '700' }}>
+              Airlines
+            </Text>
+            {carriers.length > 0 && (
+              <Pressable
                 onPress={() =>
-                  setDraft((d) => ({ ...d, carriers: toggleSet(d.carriers, c.code) }))
+                  setDraft((d) => ({
+                    ...d,
+                    carriers: allCarriersSelected
+                      ? new Set()
+                      : new Set(carriers.map((c) => c.code)),
+                  }))
                 }
-              />
-            ))}
+                hitSlop={8}
+              >
+                <Text
+                  variant="bodySmall"
+                  style={{ color: palette.primary600, fontWeight: '600' }}
+                >
+                  {allCarriersSelected ? 'Deselect All' : 'Select All'}
+                </Text>
+              </Pressable>
+            )}
           </View>
-        </Group>
+          {carriers.map((c, i) => {
+            const on = draft.carriers.has(c.code);
+            return (
+              <Pressable
+                key={c.code}
+                style={[s.row, i === carriers.length - 1 && { borderBottomWidth: 0 }]}
+                onPress={() =>
+                  setDraft((d) => ({
+                    ...d,
+                    carriers: toggleSet(d.carriers, c.code),
+                  }))
+                }
+              >
+                <View style={[s.airlineMark, { backgroundColor: c.color }]}>
+                  <Text style={s.airlineMarkText}>{c.code.slice(0, 2)}</Text>
+                </View>
+                <Text variant="bodyMedium" style={{ flex: 1 }}>
+                  {c.name}
+                </Text>
+                <Check on={on} />
+              </Pressable>
+            );
+          })}
+        </View>
 
-        {/* Journey quality */}
-        <Group title="Journey">
-          <Toggle
-            icon="rotate-ccw"
-            label="Refundable fares only"
-            hint="Cancel and get money back"
-            count={count((f) => f.refundable)}
-            active={draft.refundable}
-            onPress={() => setDraft((d) => ({ ...d, refundable: !d.refundable }))}
-          />
-          <Toggle
-            icon="shield"
-            label="Protected connections only"
-            hint="Excludes separate tickets with no rebooking cover"
-            count={count((f) => !f.layovers.some((l) => l.selfTransfer))}
-            active={draft.noSelfTransfer}
-            onPress={() =>
-              setDraft((d) => ({ ...d, noSelfTransfer: !d.noSelfTransfer }))
-            }
-          />
-          <Toggle
-            icon="sun"
-            label="Arrive the same day"
-            hint="Excludes overnight arrivals"
-            count={count((f) => f.arrivalDayOffset === 0)}
-            active={draft.noOvernight}
-            onPress={() => setDraft((d) => ({ ...d, noOvernight: !d.noOvernight }))}
-            last
-          />
-        </Group>
+        {/* Amenities */}
+        <View style={s.card}>
+          <View style={s.cardHead}>
+            <Text variant="bodyMedium" style={{ fontWeight: '700' }}>
+              Amenities
+            </Text>
+            <Pressable
+              onPress={() =>
+                setDraft((d) => ({
+                  ...d,
+                  amenities: allAmenitiesSelected
+                    ? new Set()
+                    : new Set(FILTER_AMENITIES.map((a) => a.id)),
+                }))
+              }
+              hitSlop={8}
+            >
+              <Text
+                variant="bodySmall"
+                style={{ color: palette.primary600, fontWeight: '600' }}
+              >
+                {allAmenitiesSelected ? 'Deselect All' : 'Select All'}
+              </Text>
+            </Pressable>
+          </View>
+          {FILTER_AMENITIES.map((a, i) => {
+            const on = draft.amenities.has(a.id);
+            return (
+              <Pressable
+                key={a.id}
+                style={[
+                  s.row,
+                  i === FILTER_AMENITIES.length - 1 && { borderBottomWidth: 0 },
+                ]}
+                onPress={() =>
+                  setDraft((d) => ({
+                    ...d,
+                    amenities: toggleSet(d.amenities, a.id),
+                  }))
+                }
+              >
+                <Text variant="bodyMedium" style={{ flex: 1 }}>
+                  {a.label}
+                </Text>
+                <Check on={on} />
+              </Pressable>
+            );
+          })}
+        </View>
       </ScrollView>
     </Sheet>
   );
 }
 
-// ─── Pieces ──────────────────────────────────────────────
-
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
+function Check({ on }: { on: boolean }) {
   return (
-    <View style={s.group}>
-      <Text variant="label" color="textTertiary" style={s.groupTitle}>
-        {title.toUpperCase()}
-      </Text>
-      {children}
+    <View style={[s.check, on && s.checkOn]}>
+      {on && <Feather name="check" size={13} color={palette.white} />}
     </View>
   );
 }
 
-function Chip({
-  label,
-  sub,
-  count,
-  active,
-  dotColor,
-  onPress,
+/** Dual-thumb price range — pan either handle along the track. */
+function DualRangeSlider({
+  min,
+  max,
+  low,
+  high,
+  onChange,
 }: {
-  label: string;
-  sub?: string;
-  count: number;
-  active: boolean;
-  dotColor?: string;
-  onPress: () => void;
+  min: number;
+  max: number;
+  low: number;
+  high: number;
+  onChange: (low: number, high: number) => void;
 }) {
-  const empty = count === 0;
-  return (
-    <Pressable
-      style={[s.chip, active && s.chipOn, empty && s.chipEmpty]}
-      onPress={onPress}
-      disabled={empty}
-    >
-      {dotColor && <View style={[s.dot, { backgroundColor: dotColor }]} />}
-      <View>
-        <Text
-          variant="caption"
-          style={{
-            color: active ? palette.white : empty ? palette.gray400 : palette.gray900,
-            fontWeight: active ? '600' : '400',
-          }}
-        >
-          {label} ({count})
-        </Text>
-        {sub && (
-          <Text
-            variant="caption"
-            style={{ color: active ? 'rgba(255,255,255,0.75)' : palette.gray500 }}
-          >
-            {sub}
-          </Text>
-        )}
-      </View>
-    </Pressable>
-  );
-}
+  const widthRef = useRef(1);
+  const [width, setWidth] = useState(1);
+  const lowRef = useRef(low);
+  const highRef = useRef(high);
+  const active = useRef<'low' | 'high' | null>(null);
 
-function Toggle({
-  icon,
-  label,
-  hint,
-  count,
-  active,
-  onPress,
-  last,
-}: {
-  icon: string;
-  label: string;
-  hint: string;
-  count: number;
-  active: boolean;
-  onPress: () => void;
-  last?: boolean;
-}) {
+  useEffect(() => {
+    lowRef.current = low;
+    highRef.current = high;
+  }, [low, high]);
+
+  const span = Math.max(1, max - min);
+  const toX = useCallback(
+    (v: number) => ((v - min) / span) * widthRef.current,
+    [min, span],
+  );
+  const toVal = useCallback(
+    (x: number) => {
+      const clamped = Math.max(0, Math.min(widthRef.current, x));
+      return snapPrice(min + (clamped / widthRef.current) * span);
+    },
+    [min, span],
+  );
+
+  const onLayout = (e: LayoutChangeEvent) => {
+    const w = e.nativeEvent.layout.width;
+    widthRef.current = Math.max(1, w);
+    setWidth(w);
+  };
+
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        const x = evt.nativeEvent.locationX;
+        const dLow = Math.abs(x - toX(lowRef.current));
+        const dHigh = Math.abs(x - toX(highRef.current));
+        active.current = dLow <= dHigh ? 'low' : 'high';
+      },
+      onPanResponderMove: (evt) => {
+        const v = toVal(evt.nativeEvent.locationX);
+        if (active.current === 'low') {
+          onChange(Math.min(v, highRef.current), highRef.current);
+        } else if (active.current === 'high') {
+          onChange(lowRef.current, Math.max(v, lowRef.current));
+        }
+      },
+      onPanResponderRelease: () => {
+        active.current = null;
+      },
+      onPanResponderTerminate: () => {
+        active.current = null;
+      },
+    }),
+  ).current;
+
+  const left = toX(low);
+  const right = toX(high);
+
   return (
-    <Pressable
-      style={[s.toggle, last && { borderBottomWidth: 0 }]}
-      onPress={onPress}
-    >
-      <View style={s.toggleIcon}>
-        <Feather name={icon as never} size={16} color={palette.gray600} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text variant="bodySmall">
-          {label} ({count})
-        </Text>
-        <Text variant="caption" color="textTertiary">
-          {hint}
-        </Text>
-      </View>
-      <View style={[s.switch, active && s.switchOn]}>
-        <View style={[s.knob, active && s.knobOn]} />
-      </View>
-    </Pressable>
+    <View style={s.sliderWrap} onLayout={onLayout} {...pan.panHandlers}>
+      <View style={s.track} />
+      <View
+        style={[
+          s.trackActive,
+          { left, width: Math.max(0, right - left) },
+        ]}
+      />
+      <View style={[s.thumb, { left: Math.max(0, left - 12) }]} />
+      <View style={[s.thumb, { left: Math.max(0, Math.min(width - 24, right - 12)) }]} />
+    </View>
   );
 }
 
 const s = StyleSheet.create({
-  body: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
+  body: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+    gap: spacing.md,
+  },
 
-  group: { marginBottom: spacing.xl },
-  groupTitle: { letterSpacing: 1, marginBottom: spacing.md },
-
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  card: {
+    backgroundColor: palette.white,
+    borderRadius: radii.lg,
+    padding: spacing.md,
     borderWidth: 1,
     borderColor: palette.gray200,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    minHeight: 48,
+  },
+  cardHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+    gap: spacing.md,
+  },
+
+  rangeEnds: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+  },
+
+  sliderWrap: {
+    height: 28,
     justifyContent: 'center',
   },
-  chipOn: { backgroundColor: palette.gray900, borderColor: palette.gray900 },
-  chipEmpty: { backgroundColor: palette.gray50, borderColor: palette.gray100 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
+  track: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: palette.gray200,
+  },
+  trackActive: {
+    position: 'absolute',
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: palette.primary500,
+  },
+  thumb: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: palette.white,
+    borderWidth: 2,
+    borderColor: palette.primary500,
+    top: 2,
+    ...({
+      shadowColor: '#000',
+      shadowOpacity: 0.12,
+      shadowRadius: 3,
+      shadowOffset: { width: 0, height: 1 },
+      elevation: 2,
+    } as const),
+  },
 
-  toggle: {
+  segments: { flexDirection: 'row', gap: spacing.sm },
+  segment: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: palette.gray200,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: palette.white,
+  },
+  segmentOn: {
+    borderColor: palette.primary500,
+    backgroundColor: palette.primary50,
+  },
+
+  timeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  timeCard: {
+    width: '48%' as unknown as number,
+    flexGrow: 1,
+    flexBasis: '46%',
+    minHeight: 64,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: palette.gray200,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    justifyContent: 'center',
+    gap: 2,
+    backgroundColor: palette.white,
+  },
+  timeCardOn: {
+    borderColor: palette.primary500,
+    backgroundColor: palette.primary50,
+  },
+
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     paddingVertical: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: palette.gray200,
-    minHeight: 68,
+    minHeight: 52,
   },
-  toggleIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: palette.gray50,
+  airlineMark: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  switch: {
-    width: 46,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: palette.gray200,
-    padding: 3,
-    justifyContent: 'center',
+  airlineMarkText: {
+    color: palette.white,
+    fontSize: 10,
+    fontWeight: '700',
   },
-  switchOn: { backgroundColor: palette.primary500 },
-  knob: {
+
+  check: {
     width: 22,
     height: 22,
-    borderRadius: 11,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: palette.gray300,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: palette.white,
   },
-  knobOn: { alignSelf: 'flex-end' },
+  checkOn: {
+    backgroundColor: palette.primary500,
+    borderColor: palette.primary500,
+  },
 
   footer: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   reset: {
     minHeight: 52,
     paddingHorizontal: spacing.lg,
     borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: palette.gray200,
+    backgroundColor: palette.primary50,
     alignItems: 'center',
     justifyContent: 'center',
   },

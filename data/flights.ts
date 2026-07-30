@@ -835,13 +835,52 @@ export const mockFlights: MockFlight[] = [
 ];
 
 // ─── Date strip ──────────────────────────────────────────
+//
+// Several weeks so the strip can scroll forward. Prices wobble so the
+// cheapest day stays visually obvious.
 
-export const dateStrip = [
-  { day: 'S', date: 15, month: 'Aug', price: 3100, full: '2026-08-15' },
-  { day: 'M', date: 16, month: 'Aug', price: 4100, full: '2026-08-16' },
-  { day: 'T', date: 17, month: 'Aug', price: 3950, full: '2026-08-17' },
-  { day: 'W', date: 18, month: 'Aug', price: 4250, full: '2026-08-18' },
-  { day: 'T', date: 19, month: 'Aug', price: 4050, full: '2026-08-19' },
-  { day: 'F', date: 20, month: 'Aug', price: 5100, full: '2026-08-20' },
-  { day: 'S', date: 21, month: 'Aug', price: 5500, full: '2026-08-21' },
+export interface DateStripDay {
+  day: string;
+  date: number;
+  month: string;
+  monthFull: string;
+  year: number;
+  price: number;
+  full: string;
+}
+
+const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_FULL = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ];
+
+function buildDateStrip(startISO: string, days: number): DateStripDay[] {
+  const start = new Date(`${startISO}T12:00:00`);
+  const base = [3100, 4100, 3950, 4250, 4050, 5100, 5500];
+  const out: DateStripDay[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const wobble = ((i * 17) % 9) * 80 - 200;
+    const weekend = d.getDay() === 0 || d.getDay() === 6 ? 600 : 0;
+    const price = Math.max(2800, base[i % base.length] + wobble + weekend);
+    const y = d.getFullYear();
+    const m = d.getMonth();
+    const day = d.getDate();
+    out.push({
+      day: DAY_LETTERS[d.getDay()],
+      date: day,
+      month: MONTH_SHORT[m],
+      monthFull: MONTH_FULL[m],
+      year: y,
+      price,
+      full: `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+    });
+  }
+  return out;
+}
+
+/** Four weeks from mid-August into September — enough to scroll past a month boundary. */
+export const dateStrip: DateStripDay[] = buildDateStrip('2026-08-15', 28);

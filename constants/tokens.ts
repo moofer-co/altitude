@@ -117,7 +117,8 @@ export const spacing = {
 // ─── Layout ──────────────────────────────────────────────
 
 export const layout = {
-  screenPadding: 24,
+  /** Left/right inset for screens, sheets, and page chrome. */
+  screenPadding: 16,
   sectionGap: 32,
   componentGap: 24,
   cardGap: 16,

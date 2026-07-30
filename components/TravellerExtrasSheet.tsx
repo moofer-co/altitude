@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
-import { palette, spacing, radii } from '../constants/tokens';
+import { layout, palette, spacing, radii } from '../constants/tokens';
 import {
   ancillaries,
   ancillaryAvailable,
@@ -267,7 +267,7 @@ export function TravellerExtrasSheet({
 }
 
 const s = StyleSheet.create({
-  body: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
+  body: { paddingHorizontal: layout.screenPadding, paddingTop: spacing.lg, paddingBottom: spacing.xl },
   label: { letterSpacing: 1, marginBottom: spacing.sm, marginTop: spacing.md },
 
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: spacing.sm },
@@ -330,7 +330,7 @@ const s = StyleSheet.create({
   total: { fontSize: 21, fontWeight: '700', color: palette.gray900, lineHeight: 26 },
   cta: {
     minHeight: 52,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.screenPadding,
     backgroundColor: palette.primary500,
     borderRadius: radii.full,
     alignItems: 'center',

@@ -8,8 +8,8 @@
 
 // ─── Passengers ──────────────────────────────────────────
 
-export type PassengerType = 'adult' | 'child' | 'infant';
-export type Title = 'Mr' | 'Ms' | 'Mrs';
+export type PassengerType = 'adult' | 'child' | 'infant' | 'senior';
+export type Title = 'Mr' | 'Ms' | 'Mrs' | 'Other';
 export type Gender = 'male' | 'female' | 'other';
 
 export interface Passenger {
@@ -21,6 +21,8 @@ export interface Passenger {
   /** ISO date, required for child and infant */
   dob: string | null;
   gender: Gender | null;
+  /** Lead traveller — cannot be deleted; ticket contact defaults here */
+  primary: boolean;
   seat: string | null;
   mealId: string | null;
   baggageId: string | null;
@@ -31,15 +33,28 @@ export const PASSENGER_LABEL: Record<PassengerType, string> = {
   adult: 'Adult',
   child: 'Child',
   infant: 'Infant',
+  senior: 'Sr. citizen',
 };
 
 export const PASSENGER_HINT: Record<PassengerType, string> = {
   adult: '12 years and over',
   child: '2 to 11 years',
   infant: 'Under 2, seated on a lap',
+  senior: '60 years and over',
 };
 
-export function emptyPassenger(type: PassengerType, id: string): Passenger {
+export function genderFromTitle(title: Title | null): Gender | null {
+  if (title === 'Mr') return 'male';
+  if (title === 'Ms' || title === 'Mrs') return 'female';
+  if (title === 'Other') return 'other';
+  return null;
+}
+
+export function emptyPassenger(
+  type: PassengerType,
+  id: string,
+  primary = false,
+): Passenger {
   return {
     id,
     type,
@@ -48,6 +63,7 @@ export function emptyPassenger(type: PassengerType, id: string): Passenger {
     lastName: '',
     dob: null,
     gender: null,
+    primary,
     seat: null,
     mealId: null,
     baggageId: null,
@@ -58,6 +74,11 @@ export function emptyPassenger(type: PassengerType, id: string): Passenger {
 export function passengerName(p: Passenger): string {
   const full = `${p.firstName} ${p.lastName}`.trim();
   return full || 'Passenger details needed';
+}
+
+/** Promote one passenger to primary; clears primary on everyone else. */
+export function withPrimary(list: Passenger[], id: string): Passenger[] {
+  return list.map((p) => ({ ...p, primary: p.id === id }));
 }
 
 // ─── Validation ──────────────────────────────────────────
@@ -86,10 +107,11 @@ export function validatePassenger(p: Passenger): FieldErrors {
   else if (!NAME_RE.test(p.lastName.trim()))
     e.lastName = 'Letters, spaces and hyphens only';
 
-  if (!p.gender) e.gender = 'Choose one';
+  // Gender is inferred from title in the passenger sheet
+  if (!p.gender && !p.title) e.gender = 'Choose a title';
 
   // Airlines need a date of birth to verify child and infant fares
-  if (p.type !== 'adult') {
+  if (p.type === 'child' || p.type === 'infant') {
     if (!p.dob) {
       e.dob = 'Date of birth is required for this fare';
     } else {
@@ -100,6 +122,10 @@ export function validatePassenger(p: Passenger): FieldErrors {
       else if (p.type === 'child' && (age < 2 || age > 11))
         e.dob = 'Child fares apply from 2 to 11 years';
     }
+  } else if (p.type === 'senior' && p.dob) {
+    const age = ageFrom(p.dob);
+    if (age === null) e.dob = 'Use the format DD/MM/YYYY';
+    else if (age < 60) e.dob = 'Senior fares apply from 60 years';
   }
 
   return e;
@@ -265,8 +291,8 @@ export function isSeatTaken(row: number, letter: string): boolean {
   return n % 11 < 3;
 }
 
-export function seatPrice(seatId: string | null): number {
-  if (!seatId) return 0;
+export function seatPrice(seatId: string | null, complimentary = false): number {
+  if (!seatId || complimentary) return 0;
   const row = parseInt(seatId, 10);
   return Number.isNaN(row) ? 0 : seatZone(row).price;
 }
@@ -290,7 +316,9 @@ export function buildQuote(
 ): Quote {
   const lines: PriceLine[] = [];
 
-  const adults = passengers.filter((p) => p.type === 'adult').length;
+  const adults = passengers.filter(
+    (p) => p.type === 'adult' || p.type === 'senior',
+  ).length;
   const children = passengers.filter((p) => p.type === 'child').length;
   const infants = passengers.filter((p) => p.type === 'infant').length;
 
@@ -337,6 +365,62 @@ export function buildQuote(
   return { lines, total: subtotal + taxes };
 }
 
+/**
+ * Quote for an already-priced itinerary: flight total is fixed,
+ * then seat / meal / baggage add-ons (with tax on add-ons only).
+ */
+export function buildTripQuote(
+  passengers: Passenger[],
+  flightTotal: number,
+  flightLabel = 'Flights',
+  complimentarySeats = false,
+): Quote {
+  const lines: PriceLine[] = [];
+
+  if (flightTotal > 0) {
+    lines.push({
+      label: flightLabel,
+      amount: flightTotal,
+      note: passengers.length > 0 ? undefined : 'Based on your selected flights',
+    });
+  }
+
+  const seats = passengers.reduce(
+    (sum, p) => sum + seatPrice(p.seat, complimentarySeats),
+    0,
+  );
+  if (seats > 0) lines.push({ label: 'Seat selection', amount: seats });
+  else if (complimentarySeats && passengers.some((p) => p.seat)) {
+    lines.push({ label: 'Seat selection', amount: 0, note: 'Complimentary with your fare' });
+  }
+
+  const mealTotal = passengers.reduce((sum, p) => {
+    const m = meals.find((x) => x.id === p.mealId);
+    return sum + (m?.price ?? 0);
+  }, 0);
+  if (mealTotal > 0) lines.push({ label: 'Meals', amount: mealTotal });
+
+  const bagTotal = passengers.reduce((sum, p) => {
+    const b = baggage.find((x) => x.id === p.baggageId);
+    return sum + (b?.price ?? 0);
+  }, 0);
+  if (bagTotal > 0) lines.push({ label: 'Extra baggage', amount: bagTotal });
+
+  const addOns = seats + mealTotal + bagTotal;
+  if (addOns > 0) {
+    const taxes = Math.round(addOns * 0.12);
+    lines.push({ label: 'Taxes on add-ons', amount: taxes });
+    return { lines, total: flightTotal + addOns + taxes };
+  }
+
+  return { lines, total: flightTotal };
+}
+
+/** True once every listed passenger has required identity fields. */
+export function passengersReady(passengers: Passenger[]): boolean {
+  return passengers.length > 0 && passengers.every(isComplete);
+}
+
 // ─── Payment ─────────────────────────────────────────────
 
 export type PayMethod = 'card' | 'upi' | 'netbanking';
@@ -351,6 +435,79 @@ export const payMethods: Array<{
   { id: 'card', name: 'Card', note: 'Credit or debit', icon: 'credit-card' },
   { id: 'netbanking', name: 'Net banking', note: 'All major banks', icon: 'home' },
 ];
+
+export type PaymentOffer = {
+  id: string;
+  methods: PayMethod[];
+  title: string;
+  note: string;
+  /** Optional bank / network hint for cards */
+  hint?: string;
+};
+
+/** @deprecated Prefer data/offers — kept for typed payment selection ids */
+export { offersCatalog as paymentOffers, offersForMethod, offerById } from './offers';
+
+export type CardDraft = {
+  holder: string;
+  number: string;
+  expiry: string;
+  cvv: string;
+};
+
+export type UpiDraft = { vpa: string };
+
+export type PaymentSelection = {
+  method: PayMethod;
+  /** Display detail e.g. ···· 4242 or name@okaxis */
+  detail: string;
+  offerId: string | null;
+};
+
+export function maskCardNumber(digits: string): string {
+  const d = digits.replace(/\D/g, '');
+  if (d.length < 4) return 'Card';
+  return `···· ${d.slice(-4)}`;
+}
+
+export function formatCardNumber(raw: string): string {
+  const d = raw.replace(/\D/g, '').slice(0, 16);
+  return d.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+}
+
+export function formatExpiry(raw: string, previous: string): string {
+  const deleting = raw.length < previous.length;
+  if (deleting && raw.endsWith('/')) return raw.slice(0, -1);
+  const digits = raw.replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+}
+
+export function validateCardDraft(c: CardDraft): Partial<Record<keyof CardDraft, string>> {
+  const e: Partial<Record<keyof CardDraft, string>> = {};
+  if (!c.holder.trim()) e.holder = 'Name on card is required';
+  const digits = c.number.replace(/\D/g, '');
+  if (digits.length < 15) e.number = 'Enter a valid card number';
+  if (!/^\d{2}\/\d{2}$/.test(c.expiry)) e.expiry = 'Use MM/YY';
+  else {
+    const [mm, yy] = c.expiry.split('/').map(Number);
+    if (mm < 1 || mm > 12) e.expiry = 'Invalid month';
+    else {
+      const now = new Date();
+      const exp = new Date(2000 + yy, mm);
+      if (exp <= now) e.expiry = 'Card has expired';
+    }
+  }
+  if (!/^\d{3,4}$/.test(c.cvv)) e.cvv = 'Invalid CVV';
+  return e;
+}
+
+export function validateUpiDraft(u: UpiDraft): { vpa?: string } {
+  if (!u.vpa.trim()) return { vpa: 'Enter your UPI ID' };
+  if (!/^[a-zA-Z0-9._-]{2,}@[a-zA-Z]{2,}$/.test(u.vpa.trim()))
+    return { vpa: 'Use the format name@bank' };
+  return {};
+}
 
 // ─── Readiness ───────────────────────────────────────────
 
@@ -379,7 +536,9 @@ export function firstBlocker(
     };
   }
 
-  const adults = passengers.filter((p) => p.type === 'adult').length;
+  const adults = passengers.filter(
+    (p) => p.type === 'adult' || p.type === 'senior',
+  ).length;
   const infants = passengers.filter((p) => p.type === 'infant').length;
   if (infants > adults) {
     return {
