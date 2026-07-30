@@ -10,13 +10,21 @@ import {
   type MultiTripMode,
   type SearchLeg,
 } from './multiCity';
-import type { MockFlight } from './flights';
+import type { FareFamily, MockFlight } from './flights';
 import {
   bestFareFor,
   partyTotal,
   type PaxMix,
 } from '../lib/flightRules';
 import { emptyPassenger, type Passenger } from './booking';
+import type { FareClass } from './fares';
+
+export type FarePerks = {
+  seatComplimentary: boolean;
+  mealComplimentary: boolean;
+  checkInKg: number;
+  premium: boolean;
+};
 
 export type BookingSegment = {
   legId: string;
@@ -42,7 +50,7 @@ export type BookingSegment = {
   originTerminal: string;
   destTerminal: string;
   international: boolean;
-};
+} & FarePerks;
 
 export type BookingTripMode = MultiTripMode | 'oneWay';
 
@@ -57,6 +65,10 @@ export type BookingItinerary = {
   marketingCode: string;
   international: boolean;
   departISO: string;
+  /** True when any sector includes free seat selection. */
+  seatComplimentary: boolean;
+  mealComplimentary: boolean;
+  premiumFare: boolean;
 };
 
 const FIELD_SEP = '|';
@@ -81,10 +93,41 @@ export function parsePaxParams(
 
 export function seedPassengers(pax: PaxMix, nextId: () => string): Passenger[] {
   const list: Passenger[] = [];
-  for (let i = 0; i < pax.adults; i++) list.push(emptyPassenger('adult', nextId()));
+  for (let i = 0; i < pax.adults; i++) {
+    list.push(emptyPassenger('adult', nextId(), i === 0));
+  }
   for (let i = 0; i < pax.children; i++) list.push(emptyPassenger('child', nextId()));
   for (let i = 0; i < pax.infants; i++) list.push(emptyPassenger('infant', nextId()));
+  if (list.length > 0 && !list.some((p) => p.primary)) {
+    list[0] = { ...list[0], primary: true };
+  }
   return list;
+}
+
+export function perksFromFamily(fare: FareFamily | null | undefined): FarePerks {
+  if (!fare) {
+    return {
+      seatComplimentary: false,
+      mealComplimentary: false,
+      checkInKg: 0,
+      premium: false,
+    };
+  }
+  const mealComplimentary = /included|complimentary/i.test(fare.meal);
+  const seatComplimentary = fare.id !== 'light';
+  const bag = fare.baggage.match(/(\d+)\s*kg\s*check-?in/i);
+  const checkInKg = bag ? parseInt(bag[1], 10) : fare.id === 'light' ? 0 : 15;
+  const premium = seatComplimentary && (mealComplimentary || fare.id === 'comfort' || fare.id === 'flex');
+  return { seatComplimentary, mealComplimentary, checkInKg, premium };
+}
+
+export function perksFromFareClass(fare: FareClass): FarePerks {
+  return {
+    seatComplimentary: fare.seatFree,
+    mealComplimentary: fare.mealIncluded,
+    checkInKg: fare.checkInKg,
+    premium: fare.seatFree && (fare.mealIncluded || fare.tier >= 2),
+  };
 }
 
 function snapshotFields(
@@ -93,6 +136,8 @@ function snapshotFields(
   flight: MockFlight,
   price: number,
   fareName: string,
+  perks: FarePerks,
+  refundable: boolean,
 ): string {
   return [
     leg.id,
@@ -113,10 +158,14 @@ function snapshotFields(
     String(flight.stops),
     String(price),
     fareName,
-    flight.refundable ? '1' : '0',
+    refundable ? '1' : '0',
     flight.originTerminal,
     flight.destinationTerminal,
     flight.international ? '1' : '0',
+    perks.seatComplimentary ? '1' : '0',
+    perks.mealComplimentary ? '1' : '0',
+    String(perks.checkInKg),
+    perks.premium ? '1' : '0',
   ]
     .map((x) => encodeURIComponent(String(x)))
     .join(FIELD_SEP);
@@ -136,12 +185,15 @@ export function serializeBookingSnapshots(
       const best = bestFareFor(flight, pax);
       const price = best ? best.quote.total : partyTotal(flight, pax);
       const fareName = best?.fare.name ?? 'Economy';
+      const perks = perksFromFamily(best?.fare);
       return snapshotFields(
         leg,
         sectorLabel(i, legs.length, mode),
         flight,
         price,
         fareName,
+        perks,
+        best?.fare.refundable ?? flight.refundable,
       );
     })
     .filter(Boolean)
@@ -153,6 +205,8 @@ export function serializeOneWaySnapshot(
   fareName: string,
   price: number,
   dateISO: string,
+  perks: FarePerks,
+  refundable: boolean,
   fromCity = 'Delhi',
   toCity = 'Bengaluru',
 ): string {
@@ -164,7 +218,7 @@ export function serializeOneWaySnapshot(
     toCity,
     date: dateISO,
   };
-  return snapshotFields(leg, 'Flight', flight, price, fareName);
+  return snapshotFields(leg, 'Flight', flight, price, fareName, perks, refundable);
 }
 
 function parseSegment(chunk: string): BookingSegment | null {
@@ -193,9 +247,17 @@ function parseSegment(chunk: string): BookingSegment | null {
     originTerminal,
     destTerminal,
     international,
+    seatComp,
+    mealComp,
+    checkIn,
+    premium,
   ] = p;
 
   if (!from || !to || !flightNumber) return null;
+
+  const seatComplimentary = seatComp === '1';
+  const mealComplimentary = mealComp === '1';
+  const checkInKg = parseInt(checkIn ?? '0', 10) || 0;
 
   return {
     legId: legId || `${from}-${to}`,
@@ -221,6 +283,10 @@ function parseSegment(chunk: string): BookingSegment | null {
     originTerminal: originTerminal || '—',
     destTerminal: destTerminal || '—',
     international: international === '1',
+    seatComplimentary,
+    mealComplimentary,
+    checkInKg,
+    premium: premium === '1' || (seatComplimentary && mealComplimentary),
   };
 }
 
@@ -276,6 +342,10 @@ export function defaultItinerary(): BookingItinerary {
     originTerminal: 'T3',
     destTerminal: 'T1',
     international: false,
+    seatComplimentary: false,
+    mealComplimentary: false,
+    checkInKg: 15,
+    premium: false,
   };
   return {
     mode: 'oneWay',
@@ -287,6 +357,9 @@ export function defaultItinerary(): BookingItinerary {
     marketingCode: '6E',
     international: false,
     departISO: new Date(`${dateISO}T06:15:00`).toISOString(),
+    seatComplimentary: false,
+    mealComplimentary: false,
+    premiumFare: false,
   };
 }
 
@@ -323,6 +396,10 @@ export function resolveBookingItinerary(params: {
   const flightTotal = Math.max(summed, parseInt(totalRaw ?? '', 10) || 0);
 
   const first = segments[0];
+  const seatComplimentary = segments.some((s) => s.seatComplimentary);
+  const mealComplimentary = segments.every((s) => s.mealComplimentary);
+  const premiumFare = segments.some((s) => s.premium);
+
   return {
     mode,
     title: itineraryTitle(mode, segments),
@@ -333,6 +410,9 @@ export function resolveBookingItinerary(params: {
     marketingCode: first.airlineCode,
     international: segments.some((s) => s.international),
     departISO: new Date(`${first.dateISO}T${first.depart || '12:00'}:00`).toISOString(),
+    seatComplimentary,
+    mealComplimentary,
+    premiumFare,
   };
 }
 

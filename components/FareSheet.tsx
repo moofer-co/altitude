@@ -562,7 +562,7 @@ export function FareSheet({
   flight: MockFlight | null;
   visible: boolean;
   onClose: () => void;
-  onConfirm: (fareName: string, price: number) => void;
+  onConfirm: (fare: FareClass) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<ViewMode>('cards');
@@ -784,9 +784,7 @@ export function FareSheet({
             <Pressable
               style={[s.confirm, !selectedFare && s.confirmOff]}
               disabled={!selectedFare}
-              onPress={() =>
-                selectedFare && onConfirm(selectedFare.name, selectedFare.price)
-              }
+              onPress={() => selectedFare && onConfirm(selectedFare)}
             >
               <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
                 Continue

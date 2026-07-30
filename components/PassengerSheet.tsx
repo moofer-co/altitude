@@ -45,6 +45,8 @@ export function PassengerSheet({
   onClose,
   onSave,
   onRemove,
+  canRemove = true,
+  allowMakePrimary = false,
 }: {
   visible: boolean;
   passenger: Passenger | null;
@@ -54,6 +56,10 @@ export function PassengerSheet({
   onClose: () => void;
   onSave: (p: Passenger, doc: TravelDocument | null) => void;
   onRemove?: (id: string) => void;
+  /** Primary passenger can be edited but not deleted */
+  canRemove?: boolean;
+  /** Show “Make primary” for secondary travellers */
+  allowMakePrimary?: boolean;
 }) {
   // All hooks run unconditionally, before any early return
   const [draft, setDraft] = useState<Passenger | null>(passenger);
@@ -124,7 +130,7 @@ export function PassengerSheet({
         heightRatio={0.92}
         footer={
           <View style={s.footer}>
-            {onRemove && (
+            {onRemove && canRemove && (
               <Pressable style={s.remove} onPress={() => onRemove(draft.id)} hitSlop={6}>
                 <Feather name="trash-2" size={17} color={palette.error} />
               </Pressable>
@@ -184,6 +190,36 @@ export function PassengerSheet({
           >
             {PASSENGER_HINT[draft.type]}
           </Text>
+
+          {(draft.primary || allowMakePrimary) && (
+            <Pressable
+              style={[s.primaryRow, draft.primary && s.primaryRowOn]}
+              disabled={draft.primary}
+              onPress={() => set('primary', true)}
+            >
+              <Feather
+                name={draft.primary ? 'check-circle' : 'circle'}
+                size={18}
+                color={draft.primary ? palette.primary600 : palette.gray500}
+              />
+              <View style={{ flex: 1 }}>
+                <Text
+                  variant="bodySmall"
+                  style={{
+                    color: draft.primary ? palette.primary700 : palette.gray700,
+                    fontWeight: '600',
+                  }}
+                >
+                  {draft.primary ? 'Primary passenger' : 'Make primary passenger'}
+                </Text>
+                <Text variant="caption" color="textTertiary">
+                  {draft.primary
+                    ? 'Lead traveller on this booking — can be edited, not removed'
+                    : 'This traveller becomes the lead; the current primary stays on the trip'}
+                </Text>
+              </View>
+            </Pressable>
+          )}
 
           {/* Title */}
           <Label text="Title" error={show('title') ? errors.title : undefined} />
@@ -501,6 +537,22 @@ const s = StyleSheet.create({
     padding: spacing.md,
     borderRadius: radii.md,
     marginTop: spacing.xl,
+  },
+
+  primaryRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: palette.gray200,
+    marginBottom: spacing.lg,
+    backgroundColor: palette.white,
+  },
+  primaryRowOn: {
+    borderColor: palette.primary300,
+    backgroundColor: palette.primary50,
   },
 
   footer: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
