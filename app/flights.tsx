@@ -11,7 +11,7 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/ui';
 import { layout, palette, spacing, radii, shadows } from '../constants/tokens';
@@ -63,7 +63,6 @@ const TOP_RESTORE_Y = 28;
 /** Past this, scrolling down collapses the date chrome. */
 const COLLAPSE_Y = 56;
 
-const DESTINATION_CITY = 'Bengaluru';
 const BASE_MONTH_KEY = `${dateStrip[0].monthFull}-${dateStrip[0].year}`;
 
 type SortMode = 'price' | 'stops' | 'time';
@@ -91,10 +90,22 @@ function monthBanner(d: (typeof dateStrip)[number]) {
   return `${d.monthFull.toUpperCase()} ${d.year}`;
 }
 
+function initialDateIndex(depart?: string): number {
+  if (!depart) return 0;
+  const i = dateStrip.findIndex((d) => d.full === depart);
+  return i >= 0 ? i : 0;
+}
+
 export default function Flights() {
   const router = useRouter();
+  const { city, depart } = useLocalSearchParams<{
+    to?: string;
+    city?: string;
+    depart?: string;
+  }>();
+  const destinationCity = city ?? 'Bengaluru';
   const [pax, setPax] = useState<PaxMix>(defaultPax);
-  const [dateIndex, setDateIndex] = useState(0);
+  const [dateIndex, setDateIndex] = useState(() => initialDateIndex(depart));
   const [sortMode, setSortMode] = useState<SortMode>('price');
   const [filters, setFilters] = useState<FlightFilters>(emptyFlightFilters);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -441,7 +452,7 @@ export default function Flights() {
             </Pressable>
             <View style={s.headerCopy}>
               <Text style={s.tripTitle} numberOfLines={1}>
-                <Text style={s.tripCity}>{DESTINATION_CITY}</Text>
+                <Text style={s.tripCity}>{destinationCity}</Text>
                 <Text style={s.tripSuffix}> Trip</Text>
               </Text>
               <Text variant="caption" color="textSecondary" numberOfLines={1}>

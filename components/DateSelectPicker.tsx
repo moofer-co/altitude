@@ -288,7 +288,8 @@ function getCalendarDays(year: number, month: number) {
 function Calendar({
   year,
   month,
-  selectedDate,
+  departDate,
+  returnDate,
   cheapestDates,
   minDate,
   onSelect,
@@ -297,7 +298,8 @@ function Calendar({
 }: {
   year: number;
   month: number;
-  selectedDate: string | null;
+  departDate: string | null;
+  returnDate: string | null;
   cheapestDates: Set<string>;
   minDate?: string | null;
   onSelect: (date: string) => void;
@@ -359,7 +361,15 @@ function Calendar({
               return <View key={`e-${ci}`} style={calStyles.dayCell} />;
             }
 
-            const isSelected = cell.dateStr === selectedDate;
+            const isStart = cell.dateStr === departDate;
+            const isEnd = returnDate != null && cell.dateStr === returnDate;
+            const inMiddle =
+              !!departDate &&
+              !!returnDate &&
+              cell.dateStr > departDate &&
+              cell.dateStr < returnDate;
+            const inRange = isStart || isEnd || inMiddle;
+            const isEndpoint = isStart || isEnd;
             const isCheapest = cheapestDates.has(cell.dateStr);
             const isPast = cell.dateStr < floor;
 
@@ -368,9 +378,12 @@ function Calendar({
                 key={cell.dateStr}
                 style={[
                   calStyles.dayCell,
-                  isSelected && calStyles.daySelected,
-                  !isSelected && isCheapest && calStyles.dayCheapest,
-                  !isSelected && !isCheapest && calStyles.dayDefault,
+                  inMiddle && calStyles.dayInRange,
+                  isStart && returnDate && calStyles.dayRangeStart,
+                  isEnd && calStyles.dayRangeEnd,
+                  isEndpoint && calStyles.daySelected,
+                  !inRange && isCheapest && calStyles.dayCheapest,
+                  !inRange && !isCheapest && calStyles.dayDefault,
                 ]}
                 onPress={() => !isPast && onSelect(cell.dateStr)}
                 disabled={isPast}
@@ -379,12 +392,14 @@ function Calendar({
                   variant="bodySmall"
                   align="center"
                   style={{
-                    color: isSelected
+                    color: isEndpoint
                       ? palette.white
                       : isPast
                         ? palette.gray300
-                        : palette.gray900,
-                    fontWeight: isSelected ? '700' : '500',
+                        : inMiddle
+                          ? palette.primary700
+                          : palette.gray900,
+                    fontWeight: isEndpoint || inMiddle ? '700' : '500',
                     opacity: isPast ? 0.5 : 1,
                   }}
                 >
@@ -426,6 +441,24 @@ const calStyles = StyleSheet.create({
   daySelected: {
     backgroundColor: palette.primary500,
   },
+  dayInRange: {
+    backgroundColor: palette.primary100,
+    borderRadius: 0,
+  },
+  dayRangeStart: {
+    borderTopLeftRadius: 20,
+    borderBottomLeftRadius: 20,
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
+    backgroundColor: palette.primary500,
+  },
+  dayRangeEnd: {
+    borderTopRightRadius: 20,
+    borderBottomRightRadius: 20,
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+    backgroundColor: palette.primary500,
+  },
   dayCheapest: {
     backgroundColor: 'transparent',
     borderWidth: 1.5,
@@ -438,38 +471,63 @@ export function formatShortDate(iso: string) {
   return `${d} ${getMonthName(m).slice(0, 3)}`;
 }
 
+const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** e.g. "Tue, 3 August" */
+export function formatFieldDate(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return `${WEEKDAYS_SHORT[dt.getDay()]}, ${d} ${getMonthName(m)}`;
+}
+
+export type DateSelectResult = {
+  depart: string;
+  returnDate: string | null;
+};
+
 /**
  * Full date selection UI (price range, cheapest dates, calendar).
  * Used as a page and inside a sheet for multi-city.
+ * `allowReturn` enables depart/return fields and calendar range selection.
  */
 export function DateSelectPicker({
   initialDate = null,
+  initialReturnDate = null,
   minDate = null,
   confirmLabel = 'Continue',
+  allowReturn = false,
   onConfirm,
   onClose,
   embedded = false,
 }: {
   initialDate?: string | null;
+  initialReturnDate?: string | null;
   minDate?: string | null;
   confirmLabel?: string;
-  onConfirm: (date: string) => void;
+  /** When true, show Depart/Return fields and range selection. */
+  allowReturn?: boolean;
+  onConfirm: (result: DateSelectResult) => void;
   onClose?: () => void;
   /** Hide page chrome when shown inside a sheet that already has a title. */
   embedded?: boolean;
 }) {
   const [currentMonth, setCurrentMonth] = useState(8);
   const [currentYear, setCurrentYear] = useState(2026);
-  const [selectedDate, setSelectedDate] = useState<string | null>(initialDate);
+  const [departDate, setDepartDate] = useState<string | null>(initialDate);
+  const [returnDate, setReturnDate] = useState<string | null>(
+    allowReturn ? initialReturnDate : null,
+  );
+  const [focus, setFocus] = useState<'depart' | 'return'>('depart');
 
   useEffect(() => {
-    setSelectedDate(initialDate);
+    setDepartDate(initialDate);
+    setReturnDate(allowReturn ? initialReturnDate : null);
     if (initialDate) {
       const [y, m] = initialDate.split('-').map(Number);
       setCurrentMonth(m);
       setCurrentYear(y);
     }
-  }, [initialDate]);
+  }, [initialDate, initialReturnDate, allowReturn]);
 
   const months = useMemo(() => groupByMonth(fareData), []);
 
@@ -497,17 +555,20 @@ export function DateSelectPicker({
     [cheapest7],
   );
 
-  const selectedDisplay = useMemo(() => {
-    if (!selectedDate) return null;
-    const [y, m, d] = selectedDate.split('-').map(Number);
+  const headerLabel = useMemo(() => {
+    if (!departDate) return 'Select a date';
+    if (returnDate) {
+      return `${formatShortDate(departDate)} – ${formatShortDate(returnDate)}`;
+    }
+    const [y, m, d] = departDate.split('-').map(Number);
     return `${d} ${getMonthName(m)} ${y}`;
-  }, [selectedDate]);
+  }, [departDate, returnDate]);
 
   const selectedPrice = useMemo(() => {
-    if (!selectedDate) return null;
-    const found = fareData.find((d) => d.date === selectedDate);
+    if (!departDate) return null;
+    const found = fareData.find((d) => d.date === departDate);
     return found ? found.price : null;
-  }, [selectedDate]);
+  }, [departDate]);
 
   const handlePrev = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -529,21 +590,63 @@ export function DateSelectPicker({
     }
   }, [currentMonth]);
 
-  const handleDateSelect = useCallback((date: string) => {
-    setSelectedDate(date);
+  const jumpToDate = useCallback((iso: string) => {
+    const [y, m] = iso.split('-').map(Number);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCurrentMonth(m);
+    setCurrentYear(y);
   }, []);
+
+  const handleDateSelect = useCallback(
+    (date: string) => {
+      if (!allowReturn) {
+        setDepartDate(date);
+        return;
+      }
+
+      if (focus === 'depart') {
+        setDepartDate(date);
+        if (returnDate && returnDate < date) {
+          setReturnDate(null);
+        }
+        return;
+      }
+
+      // Return focus
+      if (!departDate || date < departDate) {
+        // Start a new range from this date
+        setDepartDate(date);
+        setReturnDate(null);
+        setFocus('return');
+        return;
+      }
+      if (date === departDate) {
+        // Same day — clear return (one-way for that day)
+        setReturnDate(null);
+        return;
+      }
+      setReturnDate(date);
+    },
+    [allowReturn, focus, departDate, returnDate],
+  );
 
   const handleCheapSelect = useCallback(
     (d: DayPrice) => {
       handleDateSelect(d.date);
       if (d.month !== currentMonth || d.year !== currentYear) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setCurrentMonth(d.month);
-        setCurrentYear(d.year);
+        jumpToDate(d.date);
       }
     },
-    [currentMonth, currentYear, handleDateSelect],
+    [currentMonth, currentYear, handleDateSelect, jumpToDate],
   );
+
+  const clearReturn = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setReturnDate(null);
+    setFocus('depart');
+  };
+
+  const canContinue = !!departDate;
 
   return (
     <View style={styles.root}>
@@ -551,10 +654,10 @@ export function DateSelectPicker({
         <Row justify="space-between" style={styles.header}>
           <View style={styles.datePill}>
             <Feather name="calendar" size={16} color={palette.primary600} />
-            <Text variant="bodySmall">
-              {selectedDisplay || 'Select a date'}
+            <Text variant="bodySmall" numberOfLines={1}>
+              {headerLabel}
             </Text>
-            {selectedPrice != null && (
+            {selectedPrice != null && !returnDate && (
               <View style={styles.priceBadge}>
                 <Text
                   variant="caption"
@@ -579,8 +682,8 @@ export function DateSelectPicker({
         <View style={styles.embeddedPillWrap}>
           <View style={styles.datePill}>
             <Feather name="calendar" size={16} color={palette.primary600} />
-            <Text variant="bodySmall">
-              {selectedDisplay || 'Select a date'}
+            <Text variant="bodySmall" numberOfLines={1}>
+              {headerLabel}
             </Text>
             {selectedPrice != null && (
               <View style={styles.priceBadge}>
@@ -604,7 +707,7 @@ export function DateSelectPicker({
         <PriceHistogram
           months={months}
           monthIndex={monthIndex}
-          selectedDate={selectedDate}
+          selectedDate={departDate}
           onSelectDate={handleCheapSelect}
           onMonthIndexChange={goToMonthIndex}
         />
@@ -612,7 +715,8 @@ export function DateSelectPicker({
         <Calendar
           year={currentYear}
           month={currentMonth}
-          selectedDate={selectedDate}
+          departDate={departDate}
+          returnDate={allowReturn ? returnDate : null}
           cheapestDates={cheapestDateSet}
           minDate={minDate}
           onSelect={handleDateSelect}
@@ -622,18 +726,77 @@ export function DateSelectPicker({
       </ScrollView>
 
       <View style={styles.ctaContainer}>
+        {allowReturn && (
+          <View style={styles.fields}>
+            <Pressable
+              style={[styles.field, focus === 'depart' && styles.fieldOn]}
+              onPress={() => setFocus('depart')}
+              accessibilityRole="button"
+              accessibilityLabel="Depart date"
+            >
+              <Text variant="caption" color="textTertiary">
+                Depart
+              </Text>
+              <Text
+                variant="bodyMedium"
+                numberOfLines={1}
+                style={!departDate ? styles.fieldPlaceholder : undefined}
+              >
+                {departDate ? formatFieldDate(departDate) : 'Select date'}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.field, focus === 'return' && styles.fieldOn]}
+              onPress={() => {
+                if (!departDate) {
+                  setFocus('depart');
+                  return;
+                }
+                setFocus('return');
+              }}
+              onLongPress={returnDate ? clearReturn : undefined}
+              accessibilityRole="button"
+              accessibilityLabel="Return date"
+            >
+              <View style={styles.fieldLabelRow}>
+                <Text variant="caption" color="textTertiary">
+                  Return
+                </Text>
+                {returnDate ? (
+                  <Pressable onPress={clearReturn} hitSlop={8}>
+                    <Feather name="x" size={14} color={palette.gray400} />
+                  </Pressable>
+                ) : null}
+              </View>
+              <Text
+                variant="bodyMedium"
+                numberOfLines={1}
+                style={!returnDate ? styles.fieldPlaceholder : undefined}
+              >
+                {returnDate ? formatFieldDate(returnDate) : 'Add return'}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
         <Button
           label={
-            selectedDate
-              ? `${confirmLabel} · ${formatShortDate(selectedDate)}`
-              : 'Select a date'
+            !departDate
+              ? 'Select a date'
+              : returnDate
+                ? `${confirmLabel} · round trip`
+                : `${confirmLabel} · ${formatShortDate(departDate)}`
           }
           onPress={() => {
-            if (!selectedDate) return;
-            onConfirm(selectedDate);
+            if (!departDate) return;
+            onConfirm({
+              depart: departDate,
+              returnDate: allowReturn ? returnDate : null,
+            });
           }}
           rounded
-          disabled={!selectedDate}
+          disabled={!canContinue}
         />
       </View>
     </View>
@@ -662,6 +825,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     gap: spacing.sm,
     flexShrink: 1,
+    maxWidth: '82%',
   },
   priceBadge: {
     backgroundColor: palette.warningLight || '#FEF3C7',
@@ -691,5 +855,35 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: palette.gray200,
+    gap: spacing.md,
+  },
+  fields: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  field: {
+    flex: 1,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: palette.gray200,
+    backgroundColor: palette.white,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 64,
+    justifyContent: 'center',
+    gap: 2,
+  },
+  fieldOn: {
+    borderColor: palette.primary400,
+    backgroundColor: palette.primary50,
+  },
+  fieldLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  fieldPlaceholder: {
+    color: palette.gray400,
+    fontWeight: '500',
   },
 });

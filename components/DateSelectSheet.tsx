@@ -5,6 +5,7 @@ import { DateSelectPicker } from './DateSelectPicker';
 /**
  * Full date-select experience (price range, cheapest dates, calendar)
  * as a bottom sheet — used by multi-city after picking a city.
+ * Single-date only (one date per sector).
  */
 export function DateSelectSheet({
   visible,
@@ -28,11 +29,12 @@ export function DateSelectSheet({
       <View style={styles.body}>
         <DateSelectPicker
           embedded
+          allowReturn={false}
           initialDate={selected}
           minDate={minDate}
           confirmLabel={confirmLabel}
-          onConfirm={(iso) => {
-            onSelect(iso);
+          onConfirm={({ depart }) => {
+            onSelect(depart);
             onClose();
           }}
         />
