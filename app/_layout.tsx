@@ -34,6 +34,12 @@ export default function RootLayout() {
             animation: 'fade',
           }}
         />
+        <Stack.Screen
+          name="flights-multi"
+          options={{
+            animation: 'fade',
+          }}
+        />
         {/* Instant handoff — home morph owns the transition */}
         <Stack.Screen
           name="airport-search"

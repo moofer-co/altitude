@@ -18,6 +18,7 @@ import { formatShortDate } from '../components/DateSelectPicker';
 import { layout, palette, spacing, radii, shadows } from '../constants/tokens';
 import { airports, allAirports } from '../data/airports';
 import { getPreferences } from '../data/account';
+import { legsFromComposer, serializeSearchLegs } from '../data/multiCity';
 import type { Airport } from '../types';
 
 type Leg = {
@@ -267,15 +268,22 @@ export default function MultiCity() {
         </View>
 
         <Text variant="caption" color="textTertiary" style={s.hint}>
-          Each stop needs an airport and a date. Search opens flight results
-          for the full itinerary.
+          Each stop needs an airport and a date. Search opens a dedicated
+          multi-flight results page — one sector at a time.
         </Text>
       </ScrollView>
 
       <View style={s.footer}>
         <Button
           label="Search flight"
-          onPress={() => router.push('/flights')}
+          onPress={() => {
+            const searchLegs = legsFromComposer(legs);
+            if (searchLegs.length < 2) return;
+            router.push({
+              pathname: '/flights-multi',
+              params: { legs: serializeSearchLegs(searchLegs) },
+            });
+          }}
           disabled={!canSearch}
           rounded
         />

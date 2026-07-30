@@ -30,6 +30,7 @@ export function FlightCard({
   onToggleExpand,
   onToggleCheck,
   onSelectFare,
+  selectLabel = 'Select fare',
 }: {
   flight: MockFlight;
   pax: PaxMix;
@@ -40,6 +41,8 @@ export function FlightCard({
   onToggleExpand: () => void;
   onToggleCheck: () => void;
   onSelectFare: () => void;
+  /** CTA copy — e.g. "Select flight" on multi-city results */
+  selectLabel?: string;
 }) {
   const avail = availability(flight, pax);
   const advisories = advisoriesFor(flight, pax);
@@ -191,6 +194,7 @@ export function FlightCard({
             advisories={advisories}
             blocked={blocked}
             fareName={best?.fare.name ?? 'Economy'}
+            selectLabel={selectLabel}
             onSelectFare={onSelectFare}
             onCollapse={onToggleExpand}
           />
@@ -221,7 +225,7 @@ export function FlightCard({
                 variant="caption"
                 style={{ color: palette.white, fontWeight: '600' }}
               >
-                {blocked ? 'Unavailable' : 'Select fare'}
+                {blocked ? 'Unavailable' : selectLabel}
               </Text>
             </Pressable>
           </View>
@@ -239,6 +243,7 @@ function ExpandedBand({
   advisories,
   blocked,
   fareName,
+  selectLabel,
   onSelectFare,
   onCollapse,
 }: {
@@ -247,6 +252,7 @@ function ExpandedBand({
   advisories: Advisory[];
   blocked: boolean;
   fareName: string;
+  selectLabel: string;
   onSelectFare: () => void;
   onCollapse: () => void;
 }) {
@@ -364,7 +370,7 @@ function ExpandedBand({
         disabled={blocked}
       >
         <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
-          {blocked ? 'Not enough seats' : 'Select fare'}
+          {blocked ? 'Not enough seats' : selectLabel}
         </Text>
       </Pressable>
 

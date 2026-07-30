@@ -10,7 +10,8 @@ export type PageSkeletonVariant =
   | 'account'
   | 'search'
   | 'dates'
-  | 'destinations';
+  | 'destinations'
+  | 'multiFlights';
 
 /** @deprecated Prefer PageSkeletonVariant — kept for existing tab imports. */
 export type TabSkeletonVariant = PageSkeletonVariant;
@@ -277,6 +278,32 @@ function Skeleton({
             {bone({ height: 210, borderRadius: 22 }, 'c4')}
           </View>
         </View>
+      </View>
+    );
+  }
+
+  if (variant === 'multiFlights') {
+    return (
+      <View style={styles.pad}>
+        <View style={styles.row}>
+          {bone({ width: 44, height: 44, borderRadius: 22 }, 'back')}
+          <View style={{ flex: 1, gap: 6, marginHorizontal: 8 }}>
+            {bone({ width: 72, height: 12 }, 'mode')}
+            {bone({ width: '70%', height: 18 }, 'title')}
+          </View>
+          {bone({ width: 64, height: 36, borderRadius: 18 }, 'pax')}
+        </View>
+        <View style={[styles.row, { marginTop: spacing.md, gap: 8, justifyContent: 'flex-start' }]}>
+          {bone({ width: 108, height: 56, borderRadius: radii.lg }, 'r1')}
+          {bone({ width: 108, height: 56, borderRadius: radii.lg }, 'r2')}
+          {bone({ width: 108, height: 56, borderRadius: radii.lg }, 'r3')}
+        </View>
+        {bone({ width: '55%', height: 22, marginTop: spacing.lg }, 'sec')}
+        {bone({ width: '40%', height: 14, marginTop: 8 }, 'date')}
+        {bone({ height: 4, borderRadius: 2, marginTop: spacing.md }, 'prog')}
+        {bone({ height: 110, borderRadius: radii.lg, marginTop: spacing.lg }, 'f1')}
+        {bone({ height: 110, borderRadius: radii.lg, marginTop: spacing.md }, 'f2')}
+        {bone({ height: 110, borderRadius: radii.lg, marginTop: spacing.md }, 'f3')}
       </View>
     );
   }

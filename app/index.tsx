@@ -14,6 +14,7 @@ const screens = [
   { route: '/saved', label: 'Saved / Favourites', status: 'built' },
   { route: '/airport-search', label: 'Airport search', status: 'built' },
   { route: '/multi-city', label: 'Multi-city', status: 'built' },
+  { route: '/flights-multi', label: 'Multi-city / round-trip flights', status: 'built' },
   { route: '/date-select', label: 'Date selection', status: 'built' },
   { route: '/flights', label: 'Flight recommendations', status: 'built' },
   { route: '/booking', label: 'Booking', status: 'built' },
