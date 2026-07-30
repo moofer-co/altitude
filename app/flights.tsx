@@ -444,17 +444,22 @@ export default function Flights() {
                 <Text style={s.tripSuffix}> Trip</Text>
               </Text>
               <Text variant="caption" color="textSecondary" numberOfLines={1}>
-                {formatHeaderDate(selectedDate)} · {shortPax(pax).toUpperCase()}
+                {formatHeaderDate(selectedDate)}
               </Text>
             </View>
           </View>
 
           <Pressable
-            style={s.editBtn}
+            style={s.paxFlat}
             onPress={() => setPaxOpen(true)}
-            hitSlop={12}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Travellers, ${shortPax(pax)}. Edit`}
           >
-            <Feather name="edit-2" size={18} color={palette.primary600} />
+            <Text variant="caption" style={s.paxFlatText}>
+              {shortPax(pax)}
+            </Text>
+            <Feather name="edit-2" size={15} color={palette.primary600} />
           </Pressable>
         </View>
       </Animated.View>
@@ -984,10 +989,16 @@ const s = StyleSheet.create({
     fontWeight: '600',
     color: palette.gray500,
   },
-  editBtn: {
-    padding: spacing.sm,
+  paxFlat: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: spacing.sm,
+    paddingLeft: spacing.xs,
+  },
+  paxFlatText: {
+    fontWeight: '600',
+    color: palette.gray800,
   },
 
   compareBar: { overflow: 'hidden', backgroundColor: palette.gray900, zIndex: 20 },

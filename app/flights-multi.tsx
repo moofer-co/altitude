@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   ScrollView,
   Pressable,
   StyleSheet,
   LayoutAnimation,
+  Animated,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -13,6 +16,7 @@ import { Text } from '../components/ui';
 import { PageEnter } from '../components/TabScreenEnter';
 import { FlightCard } from '../components/FlightCard';
 import { PaxSheet } from '../components/PaxSheet';
+import { PickConfirmSheet } from '../components/PickConfirmSheet';
 import {
   FilterSheet,
   emptyFlightFilters,
@@ -33,7 +37,7 @@ import {
   type MultiTripMode,
 } from '../data/multiCity';
 import type { MockFlight } from '../data/flights';
-import { getPicks } from '../lib/flightAnalysis';
+import { getPicks, type PickKind } from '../lib/flightAnalysis';
 import {
   defaultPax,
   availability,
@@ -45,6 +49,7 @@ import {
 } from '../lib/flightRules';
 
 const HPAD = layout.screenPadding;
+const COLLAPSE_Y = 48;
 
 type SelectionMap = Record<string, MockFlight>;
 
@@ -67,6 +72,10 @@ export default function FlightsMulti() {
   const [selections, setSelections] = useState<SelectionMap>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [review, setReview] = useState(false);
+  const [pick, setPick] = useState<{ kind: PickKind; flight: MockFlight } | null>(null);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const collapseAnim = useRef(new Animated.Value(0)).current;
+  const collapsedRef = useRef(false);
 
   // Reset when itinerary params change
   useEffect(() => {
@@ -74,8 +83,12 @@ export default function FlightsMulti() {
     setSelections({});
     setReview(false);
     setExpandedId(null);
+    setPick(null);
     setFilters(emptyFlightFilters());
-  }, [legsParam]);
+    setHeaderCollapsed(false);
+    collapsedRef.current = false;
+    collapseAnim.setValue(0);
+  }, [legsParam, collapseAnim]);
 
   const activeLeg: SearchLeg | null = legs[activeIndex] ?? null;
   const selectedCount = legs.filter((l) => selections[l.id]).length;
@@ -100,12 +113,40 @@ export default function FlightsMulti() {
     }, 0);
   }, [legs, selections, pax]);
 
-  const goSector = useCallback((index: number) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setActiveIndex(index);
-    setExpandedId(null);
-    setReview(false);
-  }, []);
+  const setCollapsed = useCallback(
+    (next: boolean) => {
+      if (collapsedRef.current === next) return;
+      collapsedRef.current = next;
+      setHeaderCollapsed(next);
+      Animated.timing(collapseAnim, {
+        toValue: next ? 1 : 0,
+        duration: 200,
+        useNativeDriver: false,
+      }).start();
+    },
+    [collapseAnim],
+  );
+
+  const onScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (review) return;
+      const y = e.nativeEvent.contentOffset.y;
+      setCollapsed(y > COLLAPSE_Y);
+    },
+    [review, setCollapsed],
+  );
+
+  const goSector = useCallback(
+    (index: number) => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setActiveIndex(index);
+      setExpandedId(null);
+      setReview(false);
+      setPick(null);
+      setCollapsed(false);
+    },
+    [setCollapsed],
+  );
 
   const selectFlight = useCallback(
     (flight: MockFlight) => {
@@ -113,15 +154,17 @@ export default function FlightsMulti() {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setSelections((prev) => ({ ...prev, [activeLeg.id]: flight }));
       setExpandedId(null);
+      setPick(null);
 
       if (activeIndex < legs.length - 1) {
         setActiveIndex(activeIndex + 1);
         setFilters(emptyFlightFilters());
+        setCollapsed(false);
       } else {
         setReview(true);
       }
     },
-    [activeLeg, activeIndex, legs.length],
+    [activeLeg, activeIndex, legs.length, setCollapsed],
   );
 
   const openReview = () => {
@@ -129,6 +172,25 @@ export default function FlightsMulti() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setReview(true);
   };
+
+  const onBack = () => {
+    if (review) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setReview(false);
+      return;
+    }
+    if (router.canGoBack()) router.back();
+    else router.replace('/multi-city');
+  };
+
+  const detailOpacity = collapseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
+  const detailMaxH = collapseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [220, 0],
+  });
 
   if (legs.length < 2) {
     return (
@@ -156,93 +218,60 @@ export default function FlightsMulti() {
     );
   }
 
+  const compactLabel =
+    mode === 'roundTrip'
+      ? activeIndex === 0
+        ? 'Flight 1/2'
+        : 'Flight 2/2'
+      : `Flight ${activeIndex + 1}/${legs.length}`;
+
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <PageEnter variant="multiFlights" backgroundColor={palette.gray50}>
-        {/* Header */}
+        {/* Trip chip + flat pax (matches one-way flights header pattern) */}
         <View style={s.header}>
-          <Pressable
-            style={s.iconBtn}
-            onPress={() => {
-              if (review) {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                setReview(false);
-                return;
-              }
-              if (router.canGoBack()) router.back();
-              else router.replace('/multi-city');
-            }}
-            hitSlop={6}
-            accessibilityLabel="Go back"
-          >
-            <Feather name="chevron-left" size={22} color={palette.gray900} />
-          </Pressable>
-
-          <View style={{ flex: 1 }}>
-            <Text variant="caption" color="textTertiary">
-              {mode === 'roundTrip' ? 'Round trip' : 'Multi-city'}
-            </Text>
-            <Text variant="bodyMedium" numberOfLines={1} style={{ fontWeight: '700' }}>
-              {tripTitle(mode, legs)}
-            </Text>
+          <View style={s.headerPill}>
+            <Pressable style={s.backInPill} onPress={onBack} hitSlop={6} accessibilityLabel="Go back">
+              <Feather name="chevron-left" size={20} color={palette.gray900} />
+            </Pressable>
+            <View style={s.headerCopy}>
+              {headerCollapsed && !review && activeLeg ? (
+                <>
+                  <Text variant="caption" color="textTertiary" numberOfLines={1}>
+                    {compactLabel}
+                  </Text>
+                  <Text style={s.tripTitle} numberOfLines={1}>
+                    <Text style={s.tripCity}>
+                      {activeLeg.fromCity} → {activeLeg.toCity}
+                    </Text>
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text variant="caption" color="textTertiary" numberOfLines={1}>
+                    {mode === 'roundTrip' ? 'Round trip' : 'Multi-city'}
+                  </Text>
+                  <Text style={s.tripTitle} numberOfLines={1}>
+                    <Text style={s.tripCity}>{tripTitle(mode, legs)}</Text>
+                  </Text>
+                </>
+              )}
+            </View>
           </View>
 
           <Pressable
-            style={s.paxChip}
+            style={s.paxFlat}
             onPress={() => setPaxOpen(true)}
-            accessibilityLabel="Travellers"
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Travellers, ${shortPax(pax)}. Edit`}
           >
-            <Feather name="user" size={14} color={palette.gray700} />
-            <Text variant="caption" style={{ fontWeight: '600', color: palette.gray800 }}>
+            <Text variant="caption" style={s.paxFlatText}>
               {shortPax(pax)}
             </Text>
+            <Feather name="edit-2" size={15} color={palette.primary600} />
           </Pressable>
         </View>
-
-        {/* Sector ribbon — always visible so the whole trip stays scannable */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={s.ribbon}
-          style={s.ribbonWrap}
-        >
-          {legs.map((leg, i) => {
-            const chosen = selections[leg.id];
-            const on = !review && i === activeIndex;
-            return (
-              <Pressable
-                key={leg.id}
-                style={[s.ribbonChip, on && s.ribbonChipOn, chosen && s.ribbonChipDone]}
-                onPress={() => goSector(i)}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: on }}
-              >
-                <View style={s.ribbonTop}>
-                  {chosen ? (
-                    <Feather name="check-circle" size={14} color={palette.success} />
-                  ) : (
-                    <Text variant="caption" style={s.ribbonIndex}>
-                      {i + 1}
-                    </Text>
-                  )}
-                  <Text
-                    variant="caption"
-                    style={{
-                      fontWeight: '700',
-                      color: on ? palette.primary700 : palette.gray800,
-                    }}
-                  >
-                    {leg.from}→{leg.to}
-                  </Text>
-                </View>
-                <Text variant="caption" color="textTertiary">
-                  {formatLegDateShort(leg.date)}
-                  {chosen ? ` · ${chosen.departTime}` : ''}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
 
         {review && allSelected ? (
           <ReviewPanel
@@ -256,54 +285,121 @@ export default function FlightsMulti() {
           />
         ) : (
           <>
-            {/* Active sector focus */}
-            {activeLeg && (
-              <View style={s.focus}>
-                <View style={{ flex: 1 }}>
-                  <Text variant="caption" color="textTertiary">
-                    {sectorLabel(activeIndex, legs.length, mode)}
-                  </Text>
-                  <Text variant="h2">
-                    {activeLeg.fromCity} → {activeLeg.toCity}
-                  </Text>
-                  <Text variant="caption" color="textSecondary">
-                    {formatLegDate(activeLeg.date)} · {describePax(pax)}
-                  </Text>
+            {/* Collapsible chrome: ribbon + sector detail + progress */}
+            <Animated.View
+              style={{ maxHeight: detailMaxH, opacity: detailOpacity, overflow: 'hidden' }}
+              pointerEvents={headerCollapsed ? 'none' : 'auto'}
+            >
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={s.ribbon}
+                style={s.ribbonWrap}
+              >
+                {legs.map((leg, i) => {
+                  const chosen = selections[leg.id];
+                  const on = i === activeIndex;
+                  return (
+                    <Pressable
+                      key={leg.id}
+                      style={[s.ribbonChip, on && s.ribbonChipOn, chosen && s.ribbonChipDone]}
+                      onPress={() => goSector(i)}
+                      accessibilityRole="tab"
+                      accessibilityState={{ selected: on }}
+                    >
+                      <View style={s.ribbonTop}>
+                        {chosen ? (
+                          <Feather name="check-circle" size={14} color={palette.success} />
+                        ) : (
+                          <Text variant="caption" style={s.ribbonIndex}>
+                            {i + 1}
+                          </Text>
+                        )}
+                        <Text
+                          variant="caption"
+                          style={{
+                            fontWeight: '700',
+                            color: on ? palette.primary700 : palette.gray800,
+                          }}
+                        >
+                          {leg.from}→{leg.to}
+                        </Text>
+                      </View>
+                      <Text variant="caption" color="textTertiary">
+                        {formatLegDateShort(leg.date)}
+                        {chosen ? ` · ${chosen.departTime}` : ''}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              {activeLeg && (
+                <View style={s.focus}>
+                  <View style={{ flex: 1 }}>
+                    <Text variant="caption" color="textTertiary">
+                      {sectorLabel(activeIndex, legs.length, mode)}
+                    </Text>
+                    <Text variant="h2">
+                      {activeLeg.fromCity} → {activeLeg.toCity}
+                    </Text>
+                    <Text variant="caption" color="textSecondary">
+                      {formatLegDate(activeLeg.date)}
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={s.filterBtn}
+                    onPress={() => setFilterOpen(true)}
+                    accessibilityLabel="Filters"
+                  >
+                    <Feather name="sliders" size={16} color={palette.gray800} />
+                    {countActive(filters) > 0 && (
+                      <View style={s.filterDot}>
+                        <Text style={s.filterDotText}>{countActive(filters)}</Text>
+                      </View>
+                    )}
+                  </Pressable>
                 </View>
+              )}
+
+              <View style={s.progressRow}>
+                <View style={s.progressTrack}>
+                  <View
+                    style={[
+                      s.progressFill,
+                      { width: `${(selectedCount / legs.length) * 100}%` },
+                    ]}
+                  />
+                </View>
+                <Text variant="caption" color="textTertiary">
+                  {selectedCount}/{legs.length} chosen
+                </Text>
+              </View>
+            </Animated.View>
+
+            {/* Compact filter access while scrolled */}
+            {headerCollapsed && (
+              <View style={s.compactBar}>
+                <Text variant="caption" color="textTertiary" style={{ flex: 1 }}>
+                  {selectedCount}/{legs.length} chosen
+                </Text>
                 <Pressable
-                  style={s.filterBtn}
+                  style={s.filterBtnSm}
                   onPress={() => setFilterOpen(true)}
                   accessibilityLabel="Filters"
                 >
-                  <Feather name="sliders" size={16} color={palette.gray800} />
-                  {countActive(filters) > 0 && (
-                    <View style={s.filterDot}>
-                      <Text style={s.filterDotText}>{countActive(filters)}</Text>
-                    </View>
-                  )}
+                  <Feather name="sliders" size={15} color={palette.gray800} />
+                  {countActive(filters) > 0 && <View style={s.filterDotSm} />}
                 </Pressable>
               </View>
             )}
-
-            {/* Progress hint */}
-            <View style={s.progressRow}>
-              <View style={s.progressTrack}>
-                <View
-                  style={[
-                    s.progressFill,
-                    { width: `${(selectedCount / legs.length) * 100}%` },
-                  ]}
-                />
-              </View>
-              <Text variant="caption" color="textTertiary">
-                {selectedCount}/{legs.length} chosen
-              </Text>
-            </View>
 
             <ScrollView
               style={{ flex: 1 }}
               contentContainerStyle={s.list}
               showsVerticalScrollIndicator={false}
+              onScroll={onScroll}
+              scrollEventThrottle={16}
             >
               {picks.length > 0 && (
                 <View style={s.picks}>
@@ -314,19 +410,35 @@ export default function FlightsMulti() {
                     <Pressable
                       key={p.kind}
                       style={s.pickChip}
-                      onPress={() => selectFlight(p.flight)}
+                      onPress={() => setPick({ kind: p.kind, flight: p.flight })}
                     >
-                      <Text variant="caption" style={{ fontWeight: '700', color: palette.primary700 }}>
-                        {p.kind === 'bestValue'
-                          ? 'Best value'
-                          : p.kind === 'cheapest'
-                            ? 'Cheapest'
-                            : 'Fastest'}
-                      </Text>
-                      <Text variant="caption" color="textSecondary">
-                        {p.flight.departTime} · ₹
-                        {(bestFareFor(p.flight, pax)?.quote.total ?? p.flight.price).toLocaleString()}
-                      </Text>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text
+                          variant="caption"
+                          style={{ fontWeight: '700', color: palette.primary700 }}
+                        >
+                          {p.kind === 'bestValue'
+                            ? 'Best value'
+                            : p.kind === 'cheapest'
+                              ? 'Cheapest'
+                              : 'Fastest'}
+                        </Text>
+                        <Text variant="caption" color="textTertiary">
+                          {p.flight.airlineCode} · {stopsLabelShort(p.flight)}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                        <Text variant="caption" style={{ fontWeight: '700', color: palette.gray900 }}>
+                          {p.flight.departTime}
+                        </Text>
+                        <Text variant="caption" color="textSecondary">
+                          ₹
+                          {(
+                            bestFareFor(p.flight, pax)?.quote.total ?? p.flight.price
+                          ).toLocaleString()}
+                        </Text>
+                      </View>
+                      <Feather name="chevron-right" size={16} color={palette.gray400} />
                     </Pressable>
                   ))}
                 </View>
@@ -338,7 +450,10 @@ export default function FlightsMulti() {
                     No flights match these filters
                   </Text>
                   <Pressable onPress={() => setFilters(emptyFlightFilters())}>
-                    <Text variant="bodySmall" style={{ color: palette.primary600, fontWeight: '600' }}>
+                    <Text
+                      variant="bodySmall"
+                      style={{ color: palette.primary600, fontWeight: '600' }}
+                    >
                       Clear filters
                     </Text>
                   </Pressable>
@@ -371,7 +486,6 @@ export default function FlightsMulti() {
               <View style={{ height: 120 }} />
             </ScrollView>
 
-            {/* Sticky footer */}
             <View style={s.footer}>
               <View>
                 <Text variant="caption" color="textTertiary">
@@ -429,8 +543,26 @@ export default function FlightsMulti() {
           setFilterOpen(false);
         }}
       />
+
+      <PickConfirmSheet
+        visible={pick != null}
+        kind={pick?.kind ?? null}
+        flight={pick?.flight ?? null}
+        pax={pax}
+        confirmLabel="Select this flight"
+        onClose={() => setPick(null)}
+        onConfirm={() => {
+          if (pick) selectFlight(pick.flight);
+        }}
+      />
     </SafeAreaView>
   );
+}
+
+function stopsLabelShort(flight: MockFlight): string {
+  if (flight.stops === 0) return 'Direct';
+  if (flight.stops === 1) return '1 stop';
+  return `${flight.stops} stops`;
 }
 
 function ReviewPanel({
@@ -518,30 +650,57 @@ const s = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    justifyContent: 'space-between',
     paddingHorizontal: HPAD,
     paddingVertical: spacing.sm,
+    gap: spacing.md,
   },
-  iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  headerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     backgroundColor: palette.white,
+    borderRadius: radii.full,
     borderWidth: 1,
     borderColor: palette.gray200,
+    paddingRight: spacing.md,
+    paddingLeft: 5,
+    paddingVertical: 5,
+    minHeight: 52,
+    maxWidth: '78%',
+    flexShrink: 1,
+  },
+  backInPill: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: palette.gray100,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  paxChip: {
+  headerCopy: {
+    flexShrink: 1,
+    justifyContent: 'center',
+    paddingRight: 2,
+  },
+  tripTitle: {
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  tripCity: {
+    fontWeight: '700',
+    color: palette.gray900,
+  },
+  paxFlat: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    minHeight: 40,
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.full,
-    backgroundColor: palette.white,
-    borderWidth: 1,
-    borderColor: palette.gray200,
+    paddingVertical: spacing.sm,
+    paddingLeft: spacing.xs,
+  },
+  paxFlatText: {
+    fontWeight: '600',
+    color: palette.gray800,
   },
 
   ribbonWrap: { flexGrow: 0 },
@@ -607,6 +766,33 @@ const s = StyleSheet.create({
   },
   filterDotText: { fontSize: 10, fontWeight: '700', color: palette.white },
 
+  compactBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: HPAD,
+    paddingBottom: spacing.sm,
+    gap: spacing.md,
+  },
+  filterBtnSm: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: palette.white,
+    borderWidth: 1,
+    borderColor: palette.gray200,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterDotSm: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: palette.primary500,
+  },
+
   progressRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -635,12 +821,12 @@ const s = StyleSheet.create({
   picksLabel: { letterSpacing: 0.8, fontWeight: '600' },
   pickChip: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.sm,
     backgroundColor: palette.white,
     borderRadius: radii.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     borderWidth: 1,
     borderColor: palette.primary100,
   },
