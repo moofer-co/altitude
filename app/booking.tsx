@@ -37,7 +37,6 @@ import {
 } from '../data/booking';
 import {
   resolveBookingItinerary,
-  seedPassengers,
   tripModeLabel,
 } from '../data/bookingItinerary';
 import { offerById } from '../data/offers';
@@ -51,7 +50,7 @@ import {
   type AppliedRedemption,
   type RedemptionOption,
 } from '../data/loyalty';
-import { shortPax } from '../lib/flightRules';
+import { shortPax, describePax, totalTravellers } from '../lib/flightRules';
 import { BookingPaymentSheet } from '../components/BookingPaymentSheet';
 import { ItinerarySummary } from '../components/ItinerarySummary';
 
@@ -73,9 +72,8 @@ export default function Booking() {
 
   const itinerary = useMemo(() => resolveBookingItinerary(params), [params]);
 
-  const [passengers, setPassengers] = useState<Passenger[]>(() =>
-    seedPassengers(itinerary.pax, nextId),
-  );
+  // Only saved travellers live here — aborting the sheet must not leave empty stubs.
+  const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [contact, setContact] = useState<Contact>({ email: '', phone: '' });
   const [contactTouched, setContactTouched] = useState(false);
   const [payment, setPayment] = useState<PaymentSelection | null>(null);
@@ -99,19 +97,17 @@ export default function Booking() {
 
   useEffect(() => subscribeLoyalty(() => setLinked(getLinkedLoyalty())), []);
 
-  // Open the first passenger sheet once so the page starts on identity details.
+  // Open a fresh draft for the first passenger — not added to the list until Save.
   useEffect(() => {
     if (openedFirst.current) return;
     openedFirst.current = true;
-    const first = passengers[0];
-    if (first && !isComplete(first)) {
-      const t = setTimeout(() => {
-        setEditIndex(0);
-        setEditing(first);
-      }, 280);
-      return () => clearTimeout(t);
-    }
-  }, [passengers]);
+    const t = setTimeout(() => {
+      const p = emptyPassenger('adult', nextId(), true);
+      setEditIndex(0);
+      setEditing(p);
+    }, 280);
+    return () => clearTimeout(t);
+  }, []);
 
   const scrollRef = useRef<ScrollView>(null);
   const keyboardLift = useKeyboardLift();
@@ -119,7 +115,9 @@ export default function Booking() {
   const animate = () =>
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
-  const paxDone = passengersReady(passengers);
+  const expectedTravellers = totalTravellers(itinerary.pax);
+  const paxDone =
+    passengersReady(passengers) && passengers.length >= expectedTravellers;
 
   const flightLabel =
     itinerary.segments.length > 1
@@ -174,14 +172,13 @@ export default function Booking() {
     const idx = passengers.findIndex((p) => !isComplete(p));
     if (idx >= 0) {
       setEditIndex(idx);
-      setEditing(passengers[idx]);
+      // Clone so in-sheet edits never mutate the list until Save
+      setEditing({ ...passengers[idx], assistance: [...passengers[idx].assistance] });
       return;
     }
-    if (passengers.length === 0) {
-      const p = emptyPassenger('adult', nextId(), true);
-      setEditIndex(0);
-      setEditing(p);
-    }
+    const p = emptyPassenger('adult', nextId(), passengers.length === 0);
+    setEditIndex(passengers.length);
+    setEditing(p);
   }, [passengers]);
 
   const addPassenger = useCallback(() => {
@@ -190,7 +187,13 @@ export default function Booking() {
     setEditing(p);
   }, [passengers.length]);
 
+  /** Discard sheet draft — never write partial fields into the list. */
+  const abortPassenger = useCallback(() => {
+    setEditing(null);
+  }, []);
+
   const savePassenger = useCallback((p: Passenger) => {
+    if (!isComplete(p)) return;
     animate();
     setPassengers((list) => {
       const i = list.findIndex((x) => x.id === p.id);
@@ -398,6 +401,9 @@ export default function Booking() {
         <SectionLabel>PASSENGERS</SectionLabel>
         <Text variant="caption" color="textTertiary" style={s.sectionNote}>
           Names must match the ID used at the airport. Add these before seats and payment.
+          {expectedTravellers > 1
+            ? ` · ${describePax(itinerary.pax)} on this trip`
+            : ''}
         </Text>
 
         {passengers.length === 0 ? (
@@ -411,7 +417,7 @@ export default function Booking() {
             <View style={{ flex: 1 }}>
               <Text variant="bodyMedium">Add the first passenger</Text>
               <Text variant="caption" color="textTertiary">
-                We need traveller details to continue
+                Details are only kept when you tap Save
               </Text>
             </View>
             <Feather name="chevron-right" size={18} color={palette.gray400} />
@@ -426,7 +432,7 @@ export default function Booking() {
                   style={[s.passenger, !complete && attempted && s.passengerBlocked]}
                   onPress={() => {
                     setEditIndex(i);
-                    setEditing(p);
+                    setEditing({ ...p, assistance: [...p.assistance] });
                   }}
                 >
                   <View style={[s.pIndex, complete && s.pIndexOk]}>
@@ -852,12 +858,15 @@ export default function Booking() {
         index={editIndex}
         international={itinerary.international}
         departISO={itinerary.departISO}
-        onClose={() => setEditing(null)}
+        onClose={abortPassenger}
         onSave={(p, _doc) => savePassenger(p)}
-        canRemove={!(editing?.primary)}
-        allowMakePrimary={
+        canRemove={
+          !(editing?.primary) &&
           !!editing &&
-          passengers.some((p) => p.id !== editing.id)
+          passengers.some((p) => p.id === editing.id)
+        }
+        allowMakePrimary={
+          !!editing && passengers.some((p) => p.id !== editing.id)
         }
         onRemove={
           editing &&

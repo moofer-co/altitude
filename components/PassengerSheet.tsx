@@ -66,8 +66,21 @@ export function PassengerSheet({
   const [natOpen, setNatOpen] = useState(false);
 
   useEffect(() => {
-    if (!visible) return;
-    setDraft(passenger);
+    if (!visible) {
+      setDraft(null);
+      setDoc(null);
+      setTouched(new Set());
+      setSubmitted(false);
+      return;
+    }
+    setDraft(
+      passenger
+        ? {
+            ...passenger,
+            assistance: [...passenger.assistance],
+          }
+        : null,
+    );
     setDoc(
       international
         ? {
