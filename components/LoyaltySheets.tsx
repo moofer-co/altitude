@@ -418,9 +418,6 @@ const s = StyleSheet.create({
     gap: spacing.md,
     backgroundColor: palette.white,
     borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: palette.gray200,
     padding: spacing.md,
-    marginBottom: spacing.md,
   },
 });

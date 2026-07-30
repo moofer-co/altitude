@@ -253,6 +253,51 @@ export const initialPreferences: Preferences = {
   currency: '₹ INR',
 };
 
+// ─── Saved address ───────────────────────────────────────
+
+export interface SavedAddress {
+  label: string;
+  line1: string;
+  line2: string;
+  city: string;
+  state: string;
+  pincode: string;
+  country: string;
+}
+
+export const initialSavedAddress: SavedAddress = {
+  label: 'Home',
+  line1: '42 Defence Colony',
+  line2: '',
+  city: 'New Delhi',
+  state: 'Delhi',
+  pincode: '110024',
+  country: 'India',
+};
+
+export interface AddressErrors {
+  label?: string;
+  line1?: string;
+  city?: string;
+  pincode?: string;
+}
+
+export function validateAddress(a: SavedAddress): AddressErrors {
+  const e: AddressErrors = {};
+  if (!a.label.trim()) e.label = 'Give this address a name';
+  if (!a.line1.trim()) e.line1 = 'Enter street or building';
+  if (!a.city.trim()) e.city = 'Enter city';
+  if (!a.pincode.trim() || !/^\d{4,10}$/.test(a.pincode.trim())) {
+    e.pincode = 'Enter a valid PIN / ZIP';
+  }
+  return e;
+}
+
+export function formatAddressLine(a: SavedAddress): string {
+  const parts = [a.line1, a.city, a.pincode].filter((p) => p.trim());
+  return parts.join(', ') || 'Add a billing or delivery address';
+}
+
 /** @deprecated Use getPreferences() — kept for import compatibility. */
 export const preferences = initialPreferences;
 

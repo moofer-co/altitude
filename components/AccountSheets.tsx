@@ -16,6 +16,7 @@ import {
   validateProfile,
   validateTraveller,
   validatePaymentMethod,
+  validateAddress,
   paymentMethodDetail,
   emptyTraveller,
   emptyPaymentMethod,
@@ -35,6 +36,12 @@ import {
   type PaymentMethod,
   type SpendEntry,
   type HelpArticle,
+  type SavedAddress,
+  type Preferences,
+  type PrefKey,
+  type NotificationSetting,
+  type SpendSummary,
+  documentNeedsAttention,
 } from '../data/account';
 
 // ═══════════════════════════════════════════════════════════
@@ -565,10 +572,14 @@ export function SpendHistorySheet({
   visible,
   onClose,
   onOpenTrip,
+  summary,
+  topRoutes,
 }: {
   visible: boolean;
   onClose: () => void;
   onOpenTrip?: (pnr: string) => void;
+  summary?: SpendSummary;
+  topRoutes?: Array<{ route: string; count: number }>;
 }) {
   const entries = useMemo(() => spendHistory(), []);
   const byYear = useMemo(() => spendByYear(entries), [entries]);
@@ -629,6 +640,56 @@ export function SpendHistorySheet({
         contentContainerStyle={s.body}
         showsVerticalScrollIndicator={false}
       >
+        {summary && (
+          <View style={s.statRow}>
+            <View style={s.stat}>
+              <Text style={s.statValue}>{summary.flightsFlown}</Text>
+              <Text variant="caption" color="textTertiary" align="center">
+                Flights flown
+              </Text>
+            </View>
+            <View style={s.statDivider} />
+            <View style={s.stat}>
+              <Text style={s.statValue}>{summary.upcomingCount}</Text>
+              <Text variant="caption" color="textTertiary" align="center">
+                Upcoming
+              </Text>
+            </View>
+            <View style={s.statDivider} />
+            <View style={s.stat}>
+              <Text style={s.statValue}>
+                {summary.currency}
+                {(summary.totalPaid / 1000).toFixed(1)}k
+              </Text>
+              <Text variant="caption" color="textTertiary" align="center">
+                All time
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {topRoutes && topRoutes.length > 0 && (
+          <View style={s.routesBlock}>
+            <Text
+              variant="caption"
+              color="textTertiary"
+              style={{ letterSpacing: 1, marginBottom: 6 }}
+            >
+              MOST TRAVELLED
+            </Text>
+            {topRoutes.map((r) => (
+              <View key={r.route} style={s.routeRow}>
+                <Text variant="bodySmall" style={{ flex: 1 }}>
+                  {r.route}
+                </Text>
+                <Text variant="caption" color="textTertiary">
+                  {r.count} {r.count > 1 ? 'trips' : 'trip'}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {filtered.length === 0 && (
           <View style={s.empty}>
             <Feather name="inbox" size={28} color={palette.gray400} />
@@ -1166,6 +1227,496 @@ export function TermsSheet({
 }
 
 // ═══════════════════════════════════════════════════════════
+// Nested account lists (details live here, not on the home screen)
+// ═══════════════════════════════════════════════════════════
+
+export function TravellersListSheet({
+  visible,
+  travellers,
+  onClose,
+  onOpen,
+  onAdd,
+}: {
+  visible: boolean;
+  travellers: SavedTraveller[];
+  onClose: () => void;
+  onOpen: (t: SavedTraveller) => void;
+  onAdd: () => void;
+}) {
+  return (
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title="Passengers list"
+      subtitle="People you travel with — details stay here until you book"
+      heightRatio={0.88}
+    >
+      <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
+        {travellers.map((t) => {
+          const attention = documentNeedsAttention(t);
+          return (
+            <Pressable key={t.id} style={s.listRow} onPress={() => onOpen(t)}>
+              <View style={s.listMark}>
+                <Text
+                  variant="bodySmall"
+                  style={{ color: palette.gray700, fontWeight: '700' }}
+                >
+                  {t.name.charAt(0) || '?'}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text variant="bodyMedium">{t.name}</Text>
+                <Text variant="caption" color="textTertiary">
+                  {t.relationship}
+                  {t.type !== 'adult' ? ` · ${t.type}` : ''}
+                </Text>
+              </View>
+              {attention ? (
+                <Feather name="alert-circle" size={16} color={palette.warningDark} />
+              ) : (
+                <Feather name="chevron-right" size={18} color={palette.gray400} />
+              )}
+            </Pressable>
+          );
+        })}
+        <Pressable style={s.listAdd} onPress={onAdd}>
+          <Feather name="plus" size={17} color={palette.primary600} />
+          <Text
+            variant="bodySmall"
+            style={{ color: palette.primary600, fontWeight: '600' }}
+          >
+            Add a traveller
+          </Text>
+        </Pressable>
+      </ScrollView>
+    </Sheet>
+  );
+}
+
+export function AddressSheet({
+  visible,
+  address,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  address: SavedAddress;
+  onClose: () => void;
+  onSave: (a: SavedAddress) => void;
+}) {
+  const [draft, setDraft] = useState(address);
+  const [touched, setTouched] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setDraft(address);
+      setTouched(false);
+    }
+  }, [visible, address]);
+
+  const errors = touched ? validateAddress(draft) : {};
+  const errCount = Object.keys(errors).length;
+
+  return (
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title="Saved address"
+      subtitle="Used for billing and receipts"
+      heightRatio={0.88}
+      footer={
+        <SaveFooter
+          label="Save address"
+          onPress={() => {
+            setTouched(true);
+            if (Object.keys(validateAddress(draft)).length) return;
+            onSave(draft);
+          }}
+        />
+      }
+    >
+      <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
+        <FieldAlert count={errCount} />
+        <Label text="Label" error={errors.label} />
+        <TextInput
+          style={[s.input, errors.label && s.inputError]}
+          value={draft.label}
+          onChangeText={(label) => setDraft((d) => ({ ...d, label }))}
+          placeholder="Home, Work…"
+          placeholderTextColor={palette.gray400}
+        />
+        <Label text="Address line 1" error={errors.line1} />
+        <TextInput
+          style={[s.input, errors.line1 && s.inputError]}
+          value={draft.line1}
+          onChangeText={(line1) => setDraft((d) => ({ ...d, line1 }))}
+          placeholder="Street, building"
+          placeholderTextColor={palette.gray400}
+        />
+        <Label text="Address line 2" />
+        <TextInput
+          style={s.input}
+          value={draft.line2}
+          onChangeText={(line2) => setDraft((d) => ({ ...d, line2 }))}
+          placeholder="Optional"
+          placeholderTextColor={palette.gray400}
+        />
+        <Label text="City" error={errors.city} />
+        <TextInput
+          style={[s.input, errors.city && s.inputError]}
+          value={draft.city}
+          onChangeText={(city) => setDraft((d) => ({ ...d, city }))}
+          placeholderTextColor={palette.gray400}
+        />
+        <Label text="State / region" />
+        <TextInput
+          style={s.input}
+          value={draft.state}
+          onChangeText={(state) => setDraft((d) => ({ ...d, state }))}
+          placeholderTextColor={palette.gray400}
+        />
+        <Label text="PIN / ZIP" error={errors.pincode} />
+        <TextInput
+          style={[s.input, errors.pincode && s.inputError]}
+          value={draft.pincode}
+          onChangeText={(pincode) => setDraft((d) => ({ ...d, pincode }))}
+          keyboardType="number-pad"
+          placeholderTextColor={palette.gray400}
+        />
+        <Label text="Country" />
+        <TextInput
+          style={s.input}
+          value={draft.country}
+          onChangeText={(country) => setDraft((d) => ({ ...d, country }))}
+          placeholderTextColor={palette.gray400}
+        />
+      </ScrollView>
+    </Sheet>
+  );
+}
+
+export function PreferencesSheet({
+  visible,
+  prefs,
+  homeAirportLabel,
+  onClose,
+  onPickPref,
+  onHomeAirport,
+}: {
+  visible: boolean;
+  prefs: Preferences;
+  homeAirportLabel: string;
+  onClose: () => void;
+  onPickPref: (key: Exclude<PrefKey, 'homeAirport'>) => void;
+  onHomeAirport: () => void;
+}) {
+  return (
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title="Travel preferences"
+      subtitle="Defaults applied when you search and book"
+      heightRatio={0.72}
+    >
+      <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
+        <MenuPref
+          icon="grid"
+          label="Seat"
+          value={prefs.seat}
+          onPress={() => onPickPref('seat')}
+        />
+        <MenuPref
+          icon="coffee"
+          label="Meal"
+          value={prefs.meal}
+          onPress={() => onPickPref('meal')}
+        />
+        <MenuPref
+          icon="map-pin"
+          label="Home airport"
+          value={homeAirportLabel}
+          onPress={onHomeAirport}
+        />
+        <MenuPref
+          icon="dollar-sign"
+          label="Currency"
+          value={prefs.currency}
+          last
+          onPress={() => onPickPref('currency')}
+        />
+      </ScrollView>
+    </Sheet>
+  );
+}
+
+function MenuPref({
+  icon,
+  label,
+  value,
+  last,
+  onPress,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  last?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={[s.listRow, last && { marginBottom: 0 }]} onPress={onPress}>
+      <View style={s.listIcon}>
+        <Feather name={icon as never} size={16} color={palette.gray600} />
+      </View>
+      <Text variant="bodySmall" style={{ flex: 1 }}>
+        {label}
+      </Text>
+      <Text variant="bodySmall" color="textSecondary" numberOfLines={1}>
+        {value}
+      </Text>
+      <Feather name="chevron-right" size={18} color={palette.gray400} />
+    </Pressable>
+  );
+}
+
+export function NotificationsSheet({
+  visible,
+  notifs,
+  onClose,
+  onToggle,
+}: {
+  visible: boolean;
+  notifs: NotificationSetting[];
+  onClose: () => void;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title="Notifications"
+      subtitle="Choose what reaches you — operational alerts stay on by default"
+      heightRatio={0.8}
+    >
+      <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
+        {notifs.map((n) => (
+          <View key={n.id} style={s.notifBlock}>
+            <View style={{ flex: 1 }}>
+              <View style={s.notifTitleRow}>
+                <Text variant="bodySmall">{n.title}</Text>
+                <View style={s.channelTag}>
+                  <Feather
+                    name={n.channel === 'push' ? 'smartphone' : 'mail'}
+                    size={10}
+                    color={palette.gray500}
+                  />
+                  <Text variant="caption" color="textTertiary">
+                    {n.channel}
+                  </Text>
+                </View>
+              </View>
+              <Text variant="caption" color="textTertiary">
+                {n.detail}
+              </Text>
+            </View>
+            <Pressable
+              style={[s.toggle, n.enabled && s.toggleOn]}
+              onPress={() => onToggle(n.id)}
+              hitSlop={6}
+            >
+              <View style={[s.knob, n.enabled && s.knobOn]} />
+            </Pressable>
+          </View>
+        ))}
+      </ScrollView>
+    </Sheet>
+  );
+}
+
+export function PaymentMethodsListSheet({
+  visible,
+  methods,
+  onClose,
+  onOpen,
+  onAdd,
+}: {
+  visible: boolean;
+  methods: PaymentMethod[];
+  onClose: () => void;
+  onOpen: (pm: PaymentMethod) => void;
+  onAdd: () => void;
+}) {
+  return (
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title="Payment methods"
+      subtitle="Cards and UPI used at checkout"
+      heightRatio={0.8}
+    >
+      <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
+        {methods.map((pm) => (
+          <Pressable key={pm.id} style={s.listRow} onPress={() => onOpen(pm)}>
+            <View style={s.listIcon}>
+              <Feather
+                name={pm.kind === 'upi' ? 'smartphone' : 'credit-card'}
+                size={17}
+                color={palette.gray700}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text variant="bodyMedium">{pm.label}</Text>
+                {pm.primary && (
+                  <View style={s.primaryTag}>
+                    <Text
+                      variant="caption"
+                      style={{ color: palette.primary700, fontWeight: '600' }}
+                    >
+                      Primary
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text variant="caption" color="textTertiary">
+                {pm.detail}
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={palette.gray400} />
+          </Pressable>
+        ))}
+        <Pressable style={s.listAdd} onPress={onAdd}>
+          <Feather name="plus" size={17} color={palette.primary600} />
+          <Text
+            variant="bodySmall"
+            style={{ color: palette.primary600, fontWeight: '600' }}
+          >
+            Add a payment method
+          </Text>
+        </Pressable>
+      </ScrollView>
+    </Sheet>
+  );
+}
+
+export function DiscountsSheet({
+  visible,
+  onClose,
+  onBrowseOffers,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onBrowseOffers: () => void;
+}) {
+  return (
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title="Discounts / Vouchers"
+      subtitle="Bank offers and vouchers apply at payment"
+      heightRatio={0.55}
+    >
+      <View style={s.body}>
+        <View style={s.infoCard}>
+          <Feather name="percent" size={20} color={palette.primary600} />
+          <Text variant="bodySmall" color="textSecondary" style={{ flex: 1, lineHeight: 20 }}>
+            Browse live offers anytime. During checkout, open payment and apply a
+            matching bank or voucher code before you pay.
+          </Text>
+        </View>
+        <Pressable style={s.primaryAction} onPress={onBrowseOffers}>
+          <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
+            Browse offers
+          </Text>
+          <Feather name="arrow-right" size={18} color={palette.white} />
+        </Pressable>
+      </View>
+    </Sheet>
+  );
+}
+
+export function CarbonSheet({
+  visible,
+  onClose,
+}: {
+  visible: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title="Carbon footprint"
+      subtitle="Coming soon"
+      heightRatio={0.5}
+    >
+      <View style={s.body}>
+        <View style={[s.infoCard, { backgroundColor: palette.successLight }]}>
+          <Feather name="wind" size={20} color={palette.successDark} />
+          <Text variant="bodySmall" color="textSecondary" style={{ flex: 1, lineHeight: 20 }}>
+            Per-flight emissions and offsetting will appear here once we have verified
+            data for every route and aircraft. We will not show estimates we cannot
+            stand behind.
+          </Text>
+        </View>
+      </View>
+    </Sheet>
+  );
+}
+
+export function SupportMenuSheet({
+  visible,
+  onClose,
+  onHelp,
+  onTerms,
+  onSignOut,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onHelp: () => void;
+  onTerms: () => void;
+  onSignOut: () => void;
+}) {
+  return (
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title="Support"
+      subtitle="Help, legal, and sign out"
+      heightRatio={0.55}
+    >
+      <View style={s.body}>
+        <Pressable style={s.listRow} onPress={onHelp}>
+          <View style={s.listIcon}>
+            <Feather name="help-circle" size={16} color={palette.gray600} />
+          </View>
+          <Text variant="bodySmall" style={{ flex: 1 }}>
+            Help centre
+          </Text>
+          <Feather name="chevron-right" size={18} color={palette.gray400} />
+        </Pressable>
+        <Pressable style={s.listRow} onPress={onTerms}>
+          <View style={s.listIcon}>
+            <Feather name="file-text" size={16} color={palette.gray600} />
+          </View>
+          <Text variant="bodySmall" style={{ flex: 1 }}>
+            Terms and privacy
+          </Text>
+          <Feather name="chevron-right" size={18} color={palette.gray400} />
+        </Pressable>
+        <Pressable style={s.listRow} onPress={onSignOut}>
+          <View style={s.listIcon}>
+            <Feather name="log-out" size={16} color={palette.error} />
+          </View>
+          <Text variant="bodySmall" style={{ flex: 1, color: palette.error }}>
+            Sign out
+          </Text>
+        </Pressable>
+      </View>
+    </Sheet>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
 // Sign out
 // ═══════════════════════════════════════════════════════════
 
@@ -1472,4 +2023,127 @@ const s = StyleSheet.create({
     padding: spacing.md,
     borderRadius: radii.md,
   },
+
+  listRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: palette.white,
+    borderWidth: 1,
+    borderColor: palette.gray200,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    minHeight: 60,
+  },
+  listMark: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: palette.gray100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: palette.gray50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listAdd: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    minHeight: 52,
+    marginTop: spacing.sm,
+  },
+  notifBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: palette.gray100,
+    minHeight: 72,
+  },
+  notifTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: 2,
+  },
+  channelTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: palette.gray50,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radii.xs,
+  },
+  toggle: {
+    width: 46,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: palette.gray300,
+    padding: 3,
+    justifyContent: 'center',
+  },
+  toggleOn: { backgroundColor: palette.primary500 },
+  knob: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: palette.white,
+  },
+  knobOn: { alignSelf: 'flex-end' },
+  primaryTag: {
+    backgroundColor: palette.primary50,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 1,
+    borderRadius: radii.xs,
+  },
+  infoCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    backgroundColor: palette.primary50,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  primaryAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    minHeight: 52,
+    borderRadius: radii.md,
+    backgroundColor: palette.primary500,
+  },
+  statRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: palette.gray50,
+    borderRadius: radii.md,
+  },
+  stat: { flex: 1, alignItems: 'center', gap: 2 },
+  statValue: { fontSize: 18, fontWeight: '700', color: palette.gray900 },
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 32,
+    backgroundColor: palette.gray200,
+  },
+  routesBlock: {
+    marginBottom: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: palette.gray200,
+  },
+  routeRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5 },
 });
