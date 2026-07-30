@@ -572,13 +572,18 @@ export default function Flights() {
                 onPress={enterCompare}
               />
               <QuickChip
-                icon="rotate-ccw"
-                label="Refundable"
-                active={filters.refundable}
+                icon="coffee"
+                label="Meal included"
+                active={filters.amenities.has('meal')}
                 onPress={() => {
                   animate();
                   noteSignal();
-                  setFilters((f) => ({ ...f, refundable: !f.refundable }));
+                  setFilters((f) => {
+                    const amenities = new Set(f.amenities);
+                    if (amenities.has('meal')) amenities.delete('meal');
+                    else amenities.add('meal');
+                    return { ...f, amenities };
+                  });
                 }}
               />
               <QuickChip
@@ -845,15 +850,12 @@ export default function Flights() {
         flights={bookable}
         visible={assistOpen}
         onClose={() => setAssistOpen(false)}
-        onApply={(p, timing) => {
+        onApply={(p, _timing) => {
           animate();
           setPriority(p);
           setAssistOpen(false);
           setAssistReady(false);
           setAssistHint(false);
-          if (timing !== 'any') {
-            setFilters((f) => ({ ...f, bands: new Set([timing]) }));
-          }
         }}
         onSelectFlight={(f) => {
           setAssistOpen(false);
