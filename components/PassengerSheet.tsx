@@ -8,10 +8,10 @@ import {
   validatePassenger,
   PASSENGER_LABEL,
   PASSENGER_HINT,
+  genderFromTitle,
   type Passenger,
   type PassengerType,
   type Title,
-  type Gender,
 } from '../data/booking';
 import {
   validateDocument,
@@ -19,13 +19,8 @@ import {
   type TravelDocument,
 } from '../data/trip';
 
-const TITLES: Title[] = ['Mr', 'Ms', 'Mrs'];
-const GENDERS: Array<{ id: Gender; label: string }> = [
-  { id: 'male', label: 'Male' },
-  { id: 'female', label: 'Female' },
-  { id: 'other', label: 'Other' },
-];
-const TYPES: PassengerType[] = ['adult', 'child', 'infant'];
+const TITLES: Title[] = ['Mr', 'Ms', 'Mrs', 'Other'];
+const TYPES: PassengerType[] = ['adult', 'child', 'infant', 'senior'];
 
 function maskDate(raw: string, previous: string): string {
   const deleting = raw.length < previous.length;
@@ -59,12 +54,11 @@ export function PassengerSheet({
   /** Primary passenger can be edited but not deleted */
   canRemove?: boolean;
   /**
-   * Show “Make primary” checkbox next to Save.
+   * Show “Make primary” in the form.
    * Hidden for the first / only passenger — they are primary by default.
    */
   allowMakePrimary?: boolean;
 }) {
-  // All hooks run unconditionally, before any early return
   const [draft, setDraft] = useState<Passenger | null>(passenger);
   const [doc, setDoc] = useState<TravelDocument | null>(null);
   const [touched, setTouched] = useState<Set<string>>(new Set());
@@ -114,71 +108,65 @@ export function PassengerSheet({
     Object.keys(errors).length +
     (international ? Object.keys(docErrors).length : 0);
 
+  const pickTitle = (t: Title) => {
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            title: t,
+            gender: genderFromTitle(t),
+          }
+        : d,
+    );
+    touch('title');
+  };
+
   const handleSave = () => {
     setSubmitted(true);
     if (totalErrors === 0) {
-      // First / only passenger is always primary — never ask
+      const withGender = {
+        ...draft,
+        gender: draft.gender ?? genderFromTitle(draft.title),
+      };
       const next =
-        !allowMakePrimary && !draft.primary
-          ? { ...draft, primary: true }
-          : draft;
+        !allowMakePrimary && !withGender.primary
+          ? { ...withGender, primary: true }
+          : withGender;
       onSave(next, doc);
     }
   };
 
-  const showPrimaryCheckbox = allowMakePrimary && !draft.primary;
+  const showPrimaryCheckbox = allowMakePrimary;
+  const dobOptional = draft.type === 'adult' || draft.type === 'senior';
 
   return (
     <>
       <Sheet
         visible={visible}
         onClose={onClose}
-        title={passenger?.firstName ? 'Edit passenger' : `Passenger ${index + 1}`}
+        title={
+          passenger?.firstName?.trim()
+            ? 'Edit passenger'
+            : `Passenger ${index + 1}`
+        }
         subtitle={
           international
             ? 'International flight · passport details required'
-            : 'Names must match the photo ID used at the airport'
+            : 'Name must match the photo ID used at the airport'
         }
         heightRatio={0.92}
         footer={
-          <View style={s.footer}>
-            {showPrimaryCheckbox && (
-              <>
-                <Pressable
-                  style={s.primaryCheck}
-                  onPress={() => set('primary', !draft.primary)}
-                  hitSlop={6}
-                >
-                  <View style={[s.checkBox, draft.primary && s.checkBoxOn]}>
-                    {draft.primary && (
-                      <Feather name="check" size={12} color={palette.white} />
-                    )}
-                  </View>
-                  <Text
-                    variant="bodySmall"
-                    style={{
-                      color: draft.primary ? palette.primary700 : palette.gray600,
-                      fontWeight: '600',
-                    }}
-                  >
-                    Make primary
-                  </Text>
-                </Pressable>
-                <View style={s.footerRule} />
-              </>
-            )}
-            <View style={s.footerActions}>
-              {onRemove && canRemove && (
-                <Pressable style={s.remove} onPress={() => onRemove(draft.id)} hitSlop={6}>
-                  <Feather name="trash-2" size={17} color={palette.error} />
-                </Pressable>
-              )}
-              <Pressable style={s.save} onPress={handleSave}>
-                <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
-                  Save passenger
-                </Text>
+          <View style={s.footerActions}>
+            {onRemove && canRemove && (
+              <Pressable style={s.remove} onPress={() => onRemove(draft.id)} hitSlop={6}>
+                <Feather name="trash-2" size={17} color={palette.error} />
               </Pressable>
-            </View>
+            )}
+            <Pressable style={s.save} onPress={handleSave}>
+              <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
+                Save passenger
+              </Text>
+            </Pressable>
           </View>
         }
       >
@@ -200,7 +188,6 @@ export function PassengerSheet({
             </View>
           )}
 
-          {/* Type */}
           <Label text="Travelling as" />
           <View style={s.segments}>
             {TYPES.map((t) => (
@@ -210,8 +197,9 @@ export function PassengerSheet({
                 onPress={() => set('type', t)}
               >
                 <Text
-                  variant="bodySmall"
+                  variant="caption"
                   align="center"
+                  numberOfLines={1}
                   style={{
                     color: draft.type === t ? palette.white : palette.gray700,
                     fontWeight: draft.type === t ? '600' : '400',
@@ -225,24 +213,21 @@ export function PassengerSheet({
           <Text
             variant="caption"
             color="textTertiary"
-            style={{ marginTop: 4, marginBottom: spacing.md }}
+            style={{ marginTop: 4, marginBottom: spacing.lg }}
           >
             {PASSENGER_HINT[draft.type]}
           </Text>
 
-          {/* Title */}
-          <Label text="Title" error={show('title') ? errors.title : undefined} />
+          {/* Title radios — matches mock: no pill chrome */}
           <View style={s.titleRow}>
             {TITLES.map((t) => {
               const on = draft.title === t;
               return (
                 <Pressable
                   key={t}
-                  style={[s.titlePill, on && s.titlePillOn]}
-                  onPress={() => {
-                    set('title', t);
-                    touch('title');
-                  }}
+                  style={s.titleOpt}
+                  onPress={() => pickTitle(t)}
+                  hitSlop={4}
                 >
                   <View style={[s.titleDot, on && s.titleDotOn]}>
                     {on && <View style={s.titleDotInner} />}
@@ -250,7 +235,7 @@ export function PassengerSheet({
                   <Text
                     variant="bodySmall"
                     style={{
-                      color: on ? palette.primary700 : palette.gray700,
+                      color: on ? palette.gray900 : palette.gray700,
                       fontWeight: on ? '600' : '400',
                     }}
                   >
@@ -260,8 +245,15 @@ export function PassengerSheet({
               );
             })}
           </View>
+          {show('title') && errors.title && (
+            <View style={[s.errorInline, { marginBottom: spacing.md }]}>
+              <Feather name="alert-circle" size={12} color={palette.error} />
+              <Text variant="caption" style={{ color: palette.error }}>
+                {errors.title}
+              </Text>
+            </View>
+          )}
 
-          {/* Names */}
           <View style={s.nameRow}>
             <View style={{ flex: 1 }}>
               <Label text="First name" error={show('firstName') ? errors.firstName : undefined} />
@@ -293,36 +285,9 @@ export function PassengerSheet({
             </View>
           </View>
 
-          {/* Gender */}
-          <Label text="Gender" error={show('gender') ? errors.gender : undefined} />
-          <View style={s.segments}>
-            {GENDERS.map((g) => (
-              <Pressable
-                key={g.id}
-                style={[s.segment, draft.gender === g.id && s.segmentOn]}
-                onPress={() => {
-                  set('gender', g.id);
-                  touch('gender');
-                }}
-              >
-                <Text
-                  variant="bodySmall"
-                  align="center"
-                  style={{
-                    color: draft.gender === g.id ? palette.white : palette.gray700,
-                    fontWeight: draft.gender === g.id ? '600' : '400',
-                  }}
-                >
-                  {g.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          {/* DOB */}
           <View style={{ marginTop: spacing.md }}>
             <Label
-              text={draft.type === 'adult' ? 'Date of birth (optional)' : 'Date of birth'}
+              text={dobOptional ? 'Date of birth (optional)' : 'Date of birth'}
               error={show('dob') ? errors.dob : undefined}
             />
             <TextInput
@@ -330,20 +295,19 @@ export function PassengerSheet({
               value={draft.dob ?? ''}
               onChangeText={(v) => set('dob', maskDate(v, draft.dob ?? ''))}
               onBlur={() => touch('dob')}
-              placeholder="DD/MM/YYYY"
+              placeholder="DD / MM / YYYY"
               placeholderTextColor={palette.gray400}
               selectionColor={palette.primary500}
               keyboardType="number-pad"
               maxLength={10}
             />
-            {draft.type !== 'adult' && !show('dob') && (
+            {!dobOptional && !show('dob') && (
               <Text variant="caption" color="textTertiary" style={{ marginTop: 4 }}>
                 Airlines verify age at check-in for this fare
               </Text>
             )}
           </View>
 
-          {/* Passport */}
           {international && doc && (
             <>
               <View style={s.divider} />
@@ -400,7 +364,7 @@ export function PassengerSheet({
                   value={doc.expiry}
                   onChangeText={(v) => setDocField('expiry', maskDate(v, doc.expiry))}
                   onBlur={() => touch('expiry')}
-                  placeholder="DD/MM/YYYY"
+                  placeholder="DD / MM / YYYY"
                   placeholderTextColor={palette.gray400}
                   selectionColor={palette.primary500}
                   keyboardType="number-pad"
@@ -408,6 +372,29 @@ export function PassengerSheet({
                 />
               </View>
             </>
+          )}
+
+          {showPrimaryCheckbox && (
+            <Pressable
+              style={s.primaryCheck}
+              onPress={() => set('primary', !draft.primary)}
+              hitSlop={6}
+            >
+              <View style={[s.checkBox, draft.primary && s.checkBoxOn]}>
+                {draft.primary && (
+                  <Feather name="check" size={12} color={palette.white} />
+                )}
+              </View>
+              <Text
+                variant="bodySmall"
+                style={{
+                  color: draft.primary ? palette.primary700 : palette.gray600,
+                  fontWeight: '600',
+                }}
+              >
+                Make primary
+              </Text>
+            </Pressable>
           )}
 
           <View style={s.note}>
@@ -456,7 +443,11 @@ function Label({ text, error }: { text: string; error?: string }) {
 }
 
 const s = StyleSheet.create({
-  body: { paddingHorizontal: layout.screenPadding, paddingTop: spacing.lg, paddingBottom: spacing.xl },
+  body: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
 
   alert: {
     flexDirection: 'row',
@@ -479,27 +470,29 @@ const s = StyleSheet.create({
   segments: { flexDirection: 'row', gap: 6 },
   segment: {
     flex: 1,
-    minHeight: 48,
+    minHeight: 44,
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: palette.gray200,
     borderRadius: radii.md,
+    backgroundColor: palette.white,
   },
   segmentOn: { backgroundColor: palette.primary500, borderColor: palette.primary500 },
 
-  titleRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
-  titlePill: {
+  titleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  titleOpt: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    borderWidth: 1,
-    borderColor: palette.gray200,
-    borderRadius: radii.full,
-    paddingHorizontal: spacing.md,
-    minHeight: 44,
+    minHeight: 36,
   },
-  titlePillOn: { borderColor: palette.primary500, backgroundColor: palette.primary50 },
   titleDot: {
     width: 18,
     height: 18,
@@ -510,9 +503,14 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   titleDotOn: { borderColor: palette.primary500 },
-  titleDotInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: palette.primary500 },
+  titleDotInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: palette.primary500,
+  },
 
-  nameRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  nameRow: { flexDirection: 'row', gap: spacing.sm },
 
   input: {
     ...typography.body,
@@ -539,20 +537,12 @@ const s = StyleSheet.create({
     marginBottom: spacing.xs,
   },
 
-  note: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    backgroundColor: palette.gray50,
-    padding: spacing.md,
-    borderRadius: radii.md,
-    marginTop: spacing.xl,
-  },
-
   primaryCheck: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: 2,
+    marginTop: spacing.xl,
+    paddingVertical: spacing.xs,
   },
   checkBox: {
     width: 20,
@@ -569,11 +559,15 @@ const s = StyleSheet.create({
     borderColor: palette.primary500,
   },
 
-  footer: { gap: spacing.md },
-  footerRule: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: palette.gray200,
+  note: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    backgroundColor: palette.gray50,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    marginTop: spacing.lg,
   },
+
   footerActions: {
     flexDirection: 'row',
     alignItems: 'center',

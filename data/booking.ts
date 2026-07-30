@@ -8,8 +8,8 @@
 
 // ─── Passengers ──────────────────────────────────────────
 
-export type PassengerType = 'adult' | 'child' | 'infant';
-export type Title = 'Mr' | 'Ms' | 'Mrs';
+export type PassengerType = 'adult' | 'child' | 'infant' | 'senior';
+export type Title = 'Mr' | 'Ms' | 'Mrs' | 'Other';
 export type Gender = 'male' | 'female' | 'other';
 
 export interface Passenger {
@@ -33,13 +33,22 @@ export const PASSENGER_LABEL: Record<PassengerType, string> = {
   adult: 'Adult',
   child: 'Child',
   infant: 'Infant',
+  senior: 'Sr. citizen',
 };
 
 export const PASSENGER_HINT: Record<PassengerType, string> = {
   adult: '12 years and over',
   child: '2 to 11 years',
   infant: 'Under 2, seated on a lap',
+  senior: '60 years and over',
 };
+
+export function genderFromTitle(title: Title | null): Gender | null {
+  if (title === 'Mr') return 'male';
+  if (title === 'Ms' || title === 'Mrs') return 'female';
+  if (title === 'Other') return 'other';
+  return null;
+}
 
 export function emptyPassenger(
   type: PassengerType,
@@ -98,10 +107,11 @@ export function validatePassenger(p: Passenger): FieldErrors {
   else if (!NAME_RE.test(p.lastName.trim()))
     e.lastName = 'Letters, spaces and hyphens only';
 
-  if (!p.gender) e.gender = 'Choose one';
+  // Gender is inferred from title in the passenger sheet
+  if (!p.gender && !p.title) e.gender = 'Choose a title';
 
   // Airlines need a date of birth to verify child and infant fares
-  if (p.type !== 'adult') {
+  if (p.type === 'child' || p.type === 'infant') {
     if (!p.dob) {
       e.dob = 'Date of birth is required for this fare';
     } else {
@@ -112,6 +122,10 @@ export function validatePassenger(p: Passenger): FieldErrors {
       else if (p.type === 'child' && (age < 2 || age > 11))
         e.dob = 'Child fares apply from 2 to 11 years';
     }
+  } else if (p.type === 'senior' && p.dob) {
+    const age = ageFrom(p.dob);
+    if (age === null) e.dob = 'Use the format DD/MM/YYYY';
+    else if (age < 60) e.dob = 'Senior fares apply from 60 years';
   }
 
   return e;
@@ -302,7 +316,9 @@ export function buildQuote(
 ): Quote {
   const lines: PriceLine[] = [];
 
-  const adults = passengers.filter((p) => p.type === 'adult').length;
+  const adults = passengers.filter(
+    (p) => p.type === 'adult' || p.type === 'senior',
+  ).length;
   const children = passengers.filter((p) => p.type === 'child').length;
   const infants = passengers.filter((p) => p.type === 'infant').length;
 
@@ -520,7 +536,9 @@ export function firstBlocker(
     };
   }
 
-  const adults = passengers.filter((p) => p.type === 'adult').length;
+  const adults = passengers.filter(
+    (p) => p.type === 'adult' || p.type === 'senior',
+  ).length;
   const infants = passengers.filter((p) => p.type === 'infant').length;
   if (infants > adults) {
     return {
