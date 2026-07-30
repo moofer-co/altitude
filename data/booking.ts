@@ -337,6 +337,55 @@ export function buildQuote(
   return { lines, total: subtotal + taxes };
 }
 
+/**
+ * Quote for an already-priced itinerary: flight total is fixed,
+ * then seat / meal / baggage add-ons (with tax on add-ons only).
+ */
+export function buildTripQuote(
+  passengers: Passenger[],
+  flightTotal: number,
+  flightLabel = 'Flights',
+): Quote {
+  const lines: PriceLine[] = [];
+
+  if (flightTotal > 0) {
+    lines.push({
+      label: flightLabel,
+      amount: flightTotal,
+      note: passengers.length > 0 ? undefined : 'Based on your selected flights',
+    });
+  }
+
+  const seats = passengers.reduce((sum, p) => sum + seatPrice(p.seat), 0);
+  if (seats > 0) lines.push({ label: 'Seat selection', amount: seats });
+
+  const mealTotal = passengers.reduce((sum, p) => {
+    const m = meals.find((x) => x.id === p.mealId);
+    return sum + (m?.price ?? 0);
+  }, 0);
+  if (mealTotal > 0) lines.push({ label: 'Meals', amount: mealTotal });
+
+  const bagTotal = passengers.reduce((sum, p) => {
+    const b = baggage.find((x) => x.id === p.baggageId);
+    return sum + (b?.price ?? 0);
+  }, 0);
+  if (bagTotal > 0) lines.push({ label: 'Extra baggage', amount: bagTotal });
+
+  const addOns = seats + mealTotal + bagTotal;
+  if (addOns > 0) {
+    const taxes = Math.round(addOns * 0.12);
+    lines.push({ label: 'Taxes on add-ons', amount: taxes });
+    return { lines, total: flightTotal + addOns + taxes };
+  }
+
+  return { lines, total: flightTotal };
+}
+
+/** True once every listed passenger has required identity fields. */
+export function passengersReady(passengers: Passenger[]): boolean {
+  return passengers.length > 0 && passengers.every(isComplete);
+}
+
 // ─── Payment ─────────────────────────────────────────────
 
 export type PayMethod = 'card' | 'upi' | 'netbanking';

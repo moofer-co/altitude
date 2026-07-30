@@ -37,6 +37,7 @@ import {
   type SearchLeg,
   type MultiTripMode,
 } from '../data/multiCity';
+import { serializeBookingSnapshots } from '../data/bookingItinerary';
 import type { MockFlight } from '../data/flights';
 import { getPicks, type PickKind } from '../lib/flightAnalysis';
 import {
@@ -271,7 +272,19 @@ export default function FlightsMulti() {
             pax={pax}
             total={runningTotal}
             onEdit={(i) => goSector(i)}
-            onContinue={() => router.push('/booking')}
+            onContinue={() => {
+              const trip = serializeBookingSnapshots(legs, selections, pax, mode);
+              router.push({
+                pathname: '/booking',
+                params: {
+                  trip,
+                  adults: String(pax.adults),
+                  children: String(pax.children),
+                  infants: String(pax.infants),
+                  total: String(runningTotal),
+                },
+              });
+            }}
           />
         ) : (
           <>

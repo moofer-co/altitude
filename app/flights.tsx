@@ -40,6 +40,7 @@ import {
   describePax,
   type PaxMix,
 } from '../lib/flightRules';
+import { serializeOneWaySnapshot } from '../data/bookingItinerary';
 
 const { width: SW } = Dimensions.get('window');
 const HPAD = layout.screenPadding;
@@ -888,8 +889,28 @@ export default function Flights() {
         visible={fareFlight !== null}
         onClose={() => setFareFlight(null)}
         onConfirm={(fare, price) => {
-          setConfirmed({ flight: fareFlight!.flightNumber, fare, price });
+          const flight = fareFlight!;
+          setConfirmed({ flight: flight.flightNumber, fare, price });
           setFareFlight(null);
+          const dateISO = dateStrip[dateIndex]?.full ?? depart ?? dateStrip[0].full;
+          const trip = serializeOneWaySnapshot(
+            flight,
+            fare,
+            price,
+            dateISO,
+            'Delhi',
+            destinationCity,
+          );
+          router.push({
+            pathname: '/booking',
+            params: {
+              trip,
+              adults: String(pax.adults),
+              children: String(pax.children),
+              infants: String(pax.infants),
+              total: String(price),
+            },
+          });
         }}
       />
 
