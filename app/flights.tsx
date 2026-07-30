@@ -21,6 +21,7 @@ import { FareSheet } from '../components/FareSheet';
 import { FlightCompareSheet } from '../components/FlightCompareSheet';
 import { AssistFab, AssistSheet } from '../components/DecisionAssist';
 import { PaxSheet } from '../components/PaxSheet';
+import { PaxFlatButton } from '../components/PaxFlatButton';
 import {
   FilterSheet,
   emptyFlightFilters,
@@ -449,18 +450,7 @@ export default function Flights() {
             </View>
           </View>
 
-          <Pressable
-            style={s.paxFlat}
-            onPress={() => setPaxOpen(true)}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`Travellers, ${shortPax(pax)}. Edit`}
-          >
-            <Text variant="caption" style={s.paxFlatText}>
-              {shortPax(pax)}
-            </Text>
-            <Feather name="edit-2" size={15} color={palette.primary600} />
-          </Pressable>
+          <PaxFlatButton pax={pax} onPress={() => setPaxOpen(true)} />
         </View>
       </Animated.View>
 
@@ -988,17 +978,6 @@ const s = StyleSheet.create({
   tripSuffix: {
     fontWeight: '600',
     color: palette.gray500,
-  },
-  paxFlat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: spacing.sm,
-    paddingLeft: spacing.xs,
-  },
-  paxFlatText: {
-    fontWeight: '600',
-    color: palette.gray800,
   },
 
   compareBar: { overflow: 'hidden', backgroundColor: palette.gray900, zIndex: 20 },

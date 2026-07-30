@@ -16,6 +16,7 @@ import { Text } from '../components/ui';
 import { PageEnter } from '../components/TabScreenEnter';
 import { FlightCard } from '../components/FlightCard';
 import { PaxSheet } from '../components/PaxSheet';
+import { PaxFlatButton } from '../components/PaxFlatButton';
 import { PickConfirmSheet } from '../components/PickConfirmSheet';
 import {
   FilterSheet,
@@ -259,18 +260,7 @@ export default function FlightsMulti() {
             </View>
           </View>
 
-          <Pressable
-            style={s.paxFlat}
-            onPress={() => setPaxOpen(true)}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`Travellers, ${shortPax(pax)}. Edit`}
-          >
-            <Text variant="caption" style={s.paxFlatText}>
-              {shortPax(pax)}
-            </Text>
-            <Feather name="edit-2" size={15} color={palette.primary600} />
-          </Pressable>
+          <PaxFlatButton pax={pax} onPress={() => setPaxOpen(true)} />
         </View>
 
         {review && allSelected ? (
@@ -690,17 +680,6 @@ const s = StyleSheet.create({
   tripCity: {
     fontWeight: '700',
     color: palette.gray900,
-  },
-  paxFlat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: spacing.sm,
-    paddingLeft: spacing.xs,
-  },
-  paxFlatText: {
-    fontWeight: '600',
-    color: palette.gray800,
   },
 
   ribbonWrap: { flexGrow: 0 },
