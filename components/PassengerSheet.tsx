@@ -142,39 +142,43 @@ export function PassengerSheet({
         heightRatio={0.92}
         footer={
           <View style={s.footer}>
-            {onRemove && canRemove && (
-              <Pressable style={s.remove} onPress={() => onRemove(draft.id)} hitSlop={6}>
-                <Feather name="trash-2" size={17} color={palette.error} />
-              </Pressable>
-            )}
             {showPrimaryCheckbox && (
-              <Pressable
-                style={s.primaryCheck}
-                onPress={() => set('primary', !draft.primary)}
-                hitSlop={4}
-              >
-                <View style={[s.checkBox, draft.primary && s.checkBoxOn]}>
-                  {draft.primary && (
-                    <Feather name="check" size={12} color={palette.white} />
-                  )}
-                </View>
-                <Text
-                  variant="caption"
-                  style={{
-                    color: draft.primary ? palette.primary700 : palette.gray600,
-                    fontWeight: '600',
-                    maxWidth: 72,
-                  }}
+              <>
+                <Pressable
+                  style={s.primaryCheck}
+                  onPress={() => set('primary', !draft.primary)}
+                  hitSlop={6}
                 >
-                  Make primary
+                  <View style={[s.checkBox, draft.primary && s.checkBoxOn]}>
+                    {draft.primary && (
+                      <Feather name="check" size={12} color={palette.white} />
+                    )}
+                  </View>
+                  <Text
+                    variant="bodySmall"
+                    style={{
+                      color: draft.primary ? palette.primary700 : palette.gray600,
+                      fontWeight: '600',
+                    }}
+                  >
+                    Make primary
+                  </Text>
+                </Pressable>
+                <View style={s.footerRule} />
+              </>
+            )}
+            <View style={s.footerActions}>
+              {onRemove && canRemove && (
+                <Pressable style={s.remove} onPress={() => onRemove(draft.id)} hitSlop={6}>
+                  <Feather name="trash-2" size={17} color={palette.error} />
+                </Pressable>
+              )}
+              <Pressable style={s.save} onPress={handleSave}>
+                <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
+                  Save passenger
                 </Text>
               </Pressable>
-            )}
-            <Pressable style={s.save} onPress={handleSave}>
-              <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
-                Save passenger
-              </Text>
-            </Pressable>
+            </View>
           </View>
         }
       >
@@ -545,11 +549,10 @@ const s = StyleSheet.create({
   },
 
   primaryCheck: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    minWidth: 64,
-    paddingHorizontal: 4,
+    gap: spacing.sm,
+    paddingVertical: 2,
   },
   checkBox: {
     width: 20,
@@ -566,7 +569,16 @@ const s = StyleSheet.create({
     borderColor: palette.primary500,
   },
 
-  footer: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  footer: { gap: spacing.md },
+  footerRule: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: palette.gray200,
+  },
+  footerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
   remove: {
     width: 52,
     height: 52,
