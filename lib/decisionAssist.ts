@@ -49,6 +49,7 @@ export const TIMING_OPTIONS: Array<{ value: Band | 'any'; label: string; hint: s
   { value: 'morning', label: 'Morning', hint: '6am – noon' },
   { value: 'afternoon', label: 'Afternoon', hint: 'Noon – 6pm' },
   { value: 'evening', label: 'Evening', hint: '6pm – 10pm' },
+  { value: 'night', label: 'Night', hint: '10pm – midnight' },
 ];
 
 // ─── Comfort score ───────────────────────────────────────

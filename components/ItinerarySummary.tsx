@@ -4,6 +4,7 @@ import { Text, Plane } from './ui';
 import { palette, spacing, radii } from '../constants/tokens';
 import type { BookingItinerary, BookingSegment } from '../data/bookingItinerary';
 import { tripModeLabel } from '../data/bookingItinerary';
+import { FlightAmenities } from './FlightAmenities';
 
 /**
  * Global-standard trip summary for one-way, round-trip, multi-city,
@@ -222,6 +223,10 @@ function SectorRow({
         </View>
         <Text style={s.price}>₹{segment.price.toLocaleString()}</Text>
       </View>
+
+      <View style={s.amenities}>
+        <FlightAmenities segment={segment} />
+      </View>
     </View>
   );
 }
@@ -325,4 +330,5 @@ const s = StyleSheet.create({
     marginTop: spacing.md,
   },
   price: { fontSize: 15, fontWeight: '700', color: palette.gray900 },
+  amenities: { marginTop: spacing.md },
 });

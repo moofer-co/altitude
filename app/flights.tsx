@@ -850,9 +850,14 @@ export default function Flights() {
         flights={bookable}
         visible={assistOpen}
         onClose={() => setAssistOpen(false)}
-        onApply={(p, _timing) => {
+        onApply={(p, timing) => {
           animate();
           setPriority(p);
+          setFilters((f) => ({
+            ...f,
+            bands:
+              timing === 'any' ? new Set() : new Set([timing]),
+          }));
           setAssistOpen(false);
           setAssistReady(false);
           setAssistHint(false);

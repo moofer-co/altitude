@@ -11,13 +11,19 @@ import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
 import { layout, palette, spacing, radii } from '../constants/tokens';
 import type { MockFlight } from '../data/flights';
+import {
+  FILTER_AMENITIES,
+  flightHasAmenity,
+  type AmenityId,
+} from '../lib/flightAmenities';
+import {
+  BAND_LABEL,
+  BAND_RANGE,
+  getBand,
+  type Band,
+} from '../lib/flightAnalysis';
 
-export type AmenityId =
-  | 'baggage'
-  | 'meal'
-  | 'entertainment'
-  | 'power'
-  | 'wifi';
+export type { AmenityId };
 
 export interface FlightFilters {
   maxStops: number | null;
@@ -27,6 +33,8 @@ export interface FlightFilters {
   priceMax: number | null;
   carriers: Set<string>;
   amenities: Set<AmenityId>;
+  /** Departure time-of-day bands */
+  bands: Set<Band>;
 }
 
 export const emptyFlightFilters = (): FlightFilters => ({
@@ -35,44 +43,18 @@ export const emptyFlightFilters = (): FlightFilters => ({
   priceMax: null,
   carriers: new Set<string>(),
   amenities: new Set<AmenityId>(),
+  bands: new Set<Band>(),
 });
 
-const AMENITIES: Array<{ id: AmenityId; label: string }> = [
-  { id: 'baggage', label: 'Baggage' },
-  { id: 'meal', label: 'In-Flight Meal' },
-  { id: 'entertainment', label: 'In-Flight Entertainment' },
-  { id: 'power', label: 'Power & USB Port' },
-  { id: 'wifi', label: 'Wi-Fi' },
-];
-
-export function flightHasAmenity(flight: MockFlight, id: AmenityId): boolean {
-  switch (id) {
-    case 'baggage':
-      return (
-        /\d+\s*kg\s*check-?in/i.test(flight.baggage) &&
-        !/cabin only/i.test(flight.baggage)
-      );
-    case 'meal':
-      return /complimentary|included/i.test(flight.meal);
-    case 'entertainment':
-      return flight.durationMin >= 150 || flight.international;
-    case 'power': {
-      const pitch = parseInt(flight.seatPitch, 10);
-      return (Number.isFinite(pitch) && pitch >= 31) || flight.international;
-    }
-    case 'wifi':
-      return flight.international || flight.durationMin >= 180;
-    default:
-      return false;
-  }
-}
+const TIME_BANDS: Band[] = ['early', 'morning', 'afternoon', 'evening', 'night'];
 
 export function countActive(f: FlightFilters): number {
   return (
     (f.maxStops !== null ? 1 : 0) +
     (f.priceMin !== null || f.priceMax !== null ? 1 : 0) +
     f.carriers.size +
-    f.amenities.size
+    f.amenities.size +
+    f.bands.size
   );
 }
 
@@ -93,6 +75,7 @@ export function applyFlightFilters(
     for (const a of f.amenities) {
       if (!flightHasAmenity(flight, a)) return false;
     }
+    if (f.bands.size > 0 && !f.bands.has(getBand(flight.departTime))) return false;
     return true;
   });
 }
@@ -138,6 +121,7 @@ export function FilterSheet({
       ...filters,
       carriers: new Set(filters.carriers),
       amenities: new Set(filters.amenities),
+      bands: new Set(filters.bands),
     });
   }, [visible, filters]);
 
@@ -174,7 +158,9 @@ export function FilterSheet({
 
   const allCarriersSelected =
     carriers.length > 0 && carriers.every((c) => draft.carriers.has(c.code));
-  const allAmenitiesSelected = AMENITIES.every((a) => draft.amenities.has(a.id));
+  const allAmenitiesSelected = FILTER_AMENITIES.every((a) =>
+    draft.amenities.has(a.id),
+  );
 
   return (
     <Sheet
@@ -275,6 +261,43 @@ export function FilterSheet({
           </View>
         </View>
 
+        {/* Departure time */}
+        <View style={s.card}>
+          <Text variant="bodyMedium" style={{ fontWeight: '700', marginBottom: spacing.md }}>
+            Departure Time
+          </Text>
+          <View style={s.timeGrid}>
+            {TIME_BANDS.map((b) => {
+              const on = draft.bands.has(b);
+              return (
+                <Pressable
+                  key={b}
+                  style={[s.timeCard, on && s.timeCardOn]}
+                  onPress={() =>
+                    setDraft((d) => ({ ...d, bands: toggleSet(d.bands, b) }))
+                  }
+                >
+                  <Text
+                    variant="bodySmall"
+                    style={{
+                      fontWeight: '700',
+                      color: on ? palette.primary700 : palette.gray900,
+                    }}
+                  >
+                    {BAND_LABEL[b]}
+                  </Text>
+                  <Text
+                    variant="caption"
+                    style={{ color: on ? palette.primary600 : palette.gray500 }}
+                  >
+                    {BAND_RANGE[b]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
         {/* Airlines */}
         <View style={s.card}>
           <View style={s.cardHead}>
@@ -339,7 +362,7 @@ export function FilterSheet({
                   ...d,
                   amenities: allAmenitiesSelected
                     ? new Set()
-                    : new Set(AMENITIES.map((a) => a.id)),
+                    : new Set(FILTER_AMENITIES.map((a) => a.id)),
                 }))
               }
               hitSlop={8}
@@ -352,12 +375,15 @@ export function FilterSheet({
               </Text>
             </Pressable>
           </View>
-          {AMENITIES.map((a, i) => {
+          {FILTER_AMENITIES.map((a, i) => {
             const on = draft.amenities.has(a.id);
             return (
               <Pressable
                 key={a.id}
-                style={[s.row, i === AMENITIES.length - 1 && { borderBottomWidth: 0 }]}
+                style={[
+                  s.row,
+                  i === FILTER_AMENITIES.length - 1 && { borderBottomWidth: 0 },
+                ]}
                 onPress={() =>
                   setDraft((d) => ({
                     ...d,
@@ -549,6 +575,30 @@ const s = StyleSheet.create({
     backgroundColor: palette.white,
   },
   segmentOn: {
+    borderColor: palette.primary500,
+    backgroundColor: palette.primary50,
+  },
+
+  timeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  timeCard: {
+    width: '48%' as unknown as number,
+    flexGrow: 1,
+    flexBasis: '46%',
+    minHeight: 64,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: palette.gray200,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    justifyContent: 'center',
+    gap: 2,
+    backgroundColor: palette.white,
+  },
+  timeCardOn: {
     borderColor: palette.primary500,
     backgroundColor: palette.primary50,
   },

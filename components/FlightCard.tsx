@@ -13,6 +13,7 @@ import {
   type PaxMix,
   type Advisory,
 } from '../lib/flightRules';
+import { FlightAmenities } from './FlightAmenities';
 
 const LEVEL_STYLE = {
   info: { bg: palette.infoLight, fg: palette.infoDark },
@@ -356,10 +357,11 @@ function ExpandedBand({
         </View>
       )}
 
-      {/* Inclusions */}
+      <View style={{ marginTop: spacing.sm }}>
+        <FlightAmenities flight={flight} />
+      </View>
+
       <View style={s.rows}>
-        <DetailRow icon="briefcase" label="Baggage" value={flight.baggage} />
-        <DetailRow icon="coffee" label="Meal" value={flight.meal} />
         <DetailRow icon="x-circle" label="Cancellation" value={flight.cancellation} />
         <DetailRow icon="maximize-2" label="Seat pitch" value={flight.seatPitch} />
       </View>
