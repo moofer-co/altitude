@@ -58,7 +58,10 @@ export function PassengerSheet({
   onRemove?: (id: string) => void;
   /** Primary passenger can be edited but not deleted */
   canRemove?: boolean;
-  /** Show “Make primary” for secondary travellers */
+  /**
+   * Show “Make primary” checkbox next to Save.
+   * Hidden for the first / only passenger — they are primary by default.
+   */
   allowMakePrimary?: boolean;
 }) {
   // All hooks run unconditionally, before any early return
@@ -113,8 +116,17 @@ export function PassengerSheet({
 
   const handleSave = () => {
     setSubmitted(true);
-    if (totalErrors === 0) onSave(draft, doc);
+    if (totalErrors === 0) {
+      // First / only passenger is always primary — never ask
+      const next =
+        !allowMakePrimary && !draft.primary
+          ? { ...draft, primary: true }
+          : draft;
+      onSave(next, doc);
+    }
   };
+
+  const showPrimaryCheckbox = allowMakePrimary && !draft.primary;
 
   return (
     <>
@@ -133,6 +145,29 @@ export function PassengerSheet({
             {onRemove && canRemove && (
               <Pressable style={s.remove} onPress={() => onRemove(draft.id)} hitSlop={6}>
                 <Feather name="trash-2" size={17} color={palette.error} />
+              </Pressable>
+            )}
+            {showPrimaryCheckbox && (
+              <Pressable
+                style={s.primaryCheck}
+                onPress={() => set('primary', !draft.primary)}
+                hitSlop={4}
+              >
+                <View style={[s.checkBox, draft.primary && s.checkBoxOn]}>
+                  {draft.primary && (
+                    <Feather name="check" size={12} color={palette.white} />
+                  )}
+                </View>
+                <Text
+                  variant="caption"
+                  style={{
+                    color: draft.primary ? palette.primary700 : palette.gray600,
+                    fontWeight: '600',
+                    maxWidth: 72,
+                  }}
+                >
+                  Make primary
+                </Text>
               </Pressable>
             )}
             <Pressable style={s.save} onPress={handleSave}>
@@ -190,36 +225,6 @@ export function PassengerSheet({
           >
             {PASSENGER_HINT[draft.type]}
           </Text>
-
-          {(draft.primary || allowMakePrimary) && (
-            <Pressable
-              style={[s.primaryRow, draft.primary && s.primaryRowOn]}
-              disabled={draft.primary}
-              onPress={() => set('primary', true)}
-            >
-              <Feather
-                name={draft.primary ? 'check-circle' : 'circle'}
-                size={18}
-                color={draft.primary ? palette.primary600 : palette.gray500}
-              />
-              <View style={{ flex: 1 }}>
-                <Text
-                  variant="bodySmall"
-                  style={{
-                    color: draft.primary ? palette.primary700 : palette.gray700,
-                    fontWeight: '600',
-                  }}
-                >
-                  {draft.primary ? 'Primary passenger' : 'Make primary passenger'}
-                </Text>
-                <Text variant="caption" color="textTertiary">
-                  {draft.primary
-                    ? 'Lead traveller on this booking — can be edited, not removed'
-                    : 'This traveller becomes the lead; the current primary stays on the trip'}
-                </Text>
-              </View>
-            </Pressable>
-          )}
 
           {/* Title */}
           <Label text="Title" error={show('title') ? errors.title : undefined} />
@@ -539,23 +544,29 @@ const s = StyleSheet.create({
     marginTop: spacing.xl,
   },
 
-  primaryRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: palette.gray200,
-    marginBottom: spacing.lg,
+  primaryCheck: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    minWidth: 64,
+    paddingHorizontal: 4,
+  },
+  checkBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: palette.gray300,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: palette.white,
   },
-  primaryRowOn: {
-    borderColor: palette.primary300,
-    backgroundColor: palette.primary50,
+  checkBoxOn: {
+    backgroundColor: palette.primary500,
+    borderColor: palette.primary500,
   },
 
-  footer: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   remove: {
     width: 52,
     height: 52,

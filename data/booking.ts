@@ -429,39 +429,8 @@ export type PaymentOffer = {
   hint?: string;
 };
 
-export const paymentOffers: PaymentOffer[] = [
-  {
-    id: 'upi10',
-    methods: ['upi'],
-    title: '10% instant discount with UPI',
-    note: 'Up to ₹150 off · no coupon needed',
-  },
-  {
-    id: 'hdfc5',
-    methods: ['card'],
-    title: 'HDFC 5% cashback',
-    note: 'Up to ₹500 · credit cards',
-    hint: 'HDFC',
-  },
-  {
-    id: 'axis3',
-    methods: ['card'],
-    title: 'Axis Bank 3% off',
-    note: 'Up to ₹300 on debit & credit',
-    hint: 'Axis',
-  },
-  {
-    id: 'sbi',
-    methods: ['netbanking'],
-    title: 'SBI NetBanking ₹100 off',
-    note: 'On bookings above ₹5,000',
-    hint: 'SBI',
-  },
-];
-
-export function offersForMethod(method: PayMethod): PaymentOffer[] {
-  return paymentOffers.filter((o) => o.methods.includes(method));
-}
+/** @deprecated Prefer data/offers — kept for typed payment selection ids */
+export { offersCatalog as paymentOffers, offersForMethod, offerById } from './offers';
 
 export type CardDraft = {
   holder: string;

@@ -8,6 +8,7 @@ export type PageSkeletonVariant =
   | 'trips'
   | 'saved'
   | 'account'
+  | 'offers'
   | 'search'
   | 'dates'
   | 'destinations'
@@ -214,6 +215,32 @@ function Skeleton({
               marginTop: spacing.md,
             },
             `sc${i}`,
+          ),
+        )}
+      </View>
+    );
+  }
+
+  if (variant === 'offers') {
+    return (
+      <View style={styles.pad}>
+        <View style={styles.row}>
+          {bone({ width: 120, height: 28 }, 'o0')}
+          {bone({ width: 40, height: 40, borderRadius: 20 }, 'o1')}
+        </View>
+        <View style={[styles.row, { marginTop: spacing.md, gap: spacing.sm }]}>
+          {[0, 1, 2, 3].map((i) =>
+            bone({ width: 72, height: 32, borderRadius: 16 }, `oc${i}`),
+          )}
+        </View>
+        {[0, 1, 2, 3].map((i) =>
+          bone(
+            {
+              height: 88,
+              borderRadius: radii.md,
+              marginTop: spacing.md,
+            },
+            `ocard${i}`,
           ),
         )}
       </View>

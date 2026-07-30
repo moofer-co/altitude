@@ -20,6 +20,7 @@ const screens = [
   { route: '/booking', label: 'Booking', status: 'built' },
   { route: '/itinerary', label: 'Itinerary', status: 'built' },
   { route: '/trips', label: 'Trips', status: 'built' },
+  { route: '/offers', label: 'Offers', status: 'built' },
   { route: '/account', label: 'Account', status: 'built' },
 ] as const;
 

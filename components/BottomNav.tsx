@@ -5,7 +5,7 @@ import type { BottomTabBarProps } from 'expo-router/build/react-navigation/botto
 import { Text } from './ui';
 import { palette, spacing } from '../constants/tokens';
 
-export type TabId = 'home' | 'trips' | 'saved' | 'account';
+export type TabId = 'home' | 'trips' | 'offers' | 'saved' | 'account';
 
 const TABS: {
   id: TabId;
@@ -14,6 +14,7 @@ const TABS: {
 }[] = [
   { id: 'home', label: 'Explore', icon: 'compass' },
   { id: 'trips', label: 'Trips', icon: 'map' },
+  { id: 'offers', label: 'Offers', icon: 'tag' },
   { id: 'saved', label: 'Saved', icon: 'heart' },
   { id: 'account', label: 'Account', icon: 'user' },
 ];
@@ -46,7 +47,7 @@ export function BottomNav({ state, navigation, insets }: BottomTabBarProps) {
           >
             <Feather
               name={tab.id === 'saved' && on ? 'heart' : tab.icon}
-              size={21}
+              size={20}
               color={tint}
             />
             <Text variant="caption" style={{ color: tint, marginTop: 3 }}>
@@ -72,7 +73,7 @@ const styles = StyleSheet.create({
   tab: {
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 64,
+    minWidth: 56,
     minHeight: 48,
     paddingVertical: spacing.xs,
   },

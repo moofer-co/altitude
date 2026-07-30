@@ -8,10 +8,10 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text, Sheet } from './ui';
+import { OffersSheet } from './OffersSheet';
 import { layout, palette, spacing, radii, typography } from '../constants/tokens';
 import {
   payMethods,
-  offersForMethod,
   formatCardNumber,
   formatExpiry,
   maskCardNumber,
@@ -22,6 +22,7 @@ import {
   type CardDraft,
   type UpiDraft,
 } from '../data/booking';
+import { offersForMethod, offerById } from '../data/offers';
 
 const HPAD = layout.screenPadding;
 
@@ -50,12 +51,14 @@ export function BookingPaymentSheet({
   const [upi, setUpi] = useState<UpiDraft>({ vpa: '' });
   const [offerId, setOfferId] = useState<string | null>(selected?.offerId ?? null);
   const [submitted, setSubmitted] = useState(false);
+  const [offersOpen, setOffersOpen] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
     setMethod(selected?.method ?? 'upi');
     setOfferId(selected?.offerId ?? null);
     setSubmitted(false);
+    setOffersOpen(false);
     setCard({ holder: '', number: '', expiry: '', cvv: '' });
     setUpi(
       selected?.method === 'upi' && selected.detail.includes('@')
@@ -64,9 +67,10 @@ export function BookingPaymentSheet({
     );
   }, [visible, selected]);
 
-  const offers = useMemo(() => offersForMethod(method), [method]);
+  const offers = useMemo(() => offersForMethod(method).slice(0, 3), [method]);
   const cardErrors = useMemo(() => validateCardDraft(card), [card]);
   const upiErrors = useMemo(() => validateUpiDraft(upi), [upi]);
+  const selectedOffer = offerById(offerId);
 
   const applyMethod = (id: PayMethod) => {
     setMethod(id);
@@ -102,20 +106,21 @@ export function BookingPaymentSheet({
   };
 
   return (
-    <Sheet
-      visible={visible}
-      onClose={onClose}
-      title="Payment method"
-      subtitle="Choose how you pay — offers update for each option"
-      heightRatio={0.88}
-      footer={
-        <Pressable style={s.confirm} onPress={confirm}>
-          <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
-            Use this method
-          </Text>
-        </Pressable>
-      }
-    >
+    <>
+      <Sheet
+        visible={visible && !offersOpen}
+        onClose={onClose}
+        title="Payment method"
+        subtitle="Choose how you pay — offers update for each option"
+        heightRatio={0.88}
+        footer={
+          <Pressable style={s.confirm} onPress={confirm}>
+            <Text variant="bodyMedium" style={{ color: palette.white, fontWeight: '600' }}>
+              Use this method
+            </Text>
+          </Pressable>
+        }
+      >
       <ScrollView
         contentContainerStyle={s.body}
         showsVerticalScrollIndicator={false}
@@ -268,14 +273,36 @@ export function BookingPaymentSheet({
           </View>
         )}
 
-        <Text variant="label" color="textTertiary" style={s.section}>
-          OFFERS
-        </Text>
+        <View style={s.offerHead}>
+          <Text variant="label" color="textTertiary" style={{ letterSpacing: 1 }}>
+            OFFERS
+          </Text>
+          <Pressable onPress={() => setOffersOpen(true)} hitSlop={8}>
+            <Text variant="caption" style={{ color: palette.primary600, fontWeight: '700' }}>
+              View all
+            </Text>
+          </Pressable>
+        </View>
+
+        {selectedOffer && (
+          <View style={s.applied}>
+            <Feather name="check-circle" size={14} color={palette.successDark} />
+            <Text variant="caption" style={{ color: palette.successDark, flex: 1 }}>
+              {selectedOffer.title} applied
+            </Text>
+            <Pressable onPress={() => setOfferId(null)} hitSlop={8}>
+              <Text variant="caption" style={{ color: palette.primary600, fontWeight: '600' }}>
+                Remove
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
         {offers.length === 0 ? (
           <View style={s.noteBox}>
             <Feather name="tag" size={14} color={palette.gray500} />
             <Text variant="caption" color="textTertiary" style={{ flex: 1 }}>
-              No offers for this method right now.
+              No offers for this method right now. Browse all in Offers.
             </Text>
           </View>
         ) : (
@@ -298,8 +325,7 @@ export function BookingPaymentSheet({
                   <View style={{ flex: 1 }}>
                     <Text variant="bodyMedium">{o.title}</Text>
                     <Text variant="caption" color="textTertiary">
-                      {o.note}
-                      {o.hint ? ` · ${o.hint}` : ''}
+                      {o.badge} · {o.note}
                     </Text>
                   </View>
                   <View style={[s.radio, on && s.radioOn]}>
@@ -314,6 +340,18 @@ export function BookingPaymentSheet({
         <View style={{ height: spacing.lg }} />
       </ScrollView>
     </Sheet>
+
+      <OffersSheet
+        visible={offersOpen}
+        onClose={() => setOffersOpen(false)}
+        method={method}
+        selectedId={offerId}
+        onSelect={(offer) => {
+          setOfferId(offer?.id ?? null);
+          setOffersOpen(false);
+        }}
+      />
+    </>
   );
 }
 
@@ -377,6 +415,22 @@ const s = StyleSheet.create({
     padding: spacing.md,
     backgroundColor: palette.gray50,
     borderRadius: radii.md,
+  },
+  offerHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  applied: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    borderRadius: radii.md,
+    backgroundColor: palette.successLight,
   },
   confirm: {
     alignItems: 'center',

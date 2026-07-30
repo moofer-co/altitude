@@ -44,6 +44,10 @@ export type BookingSegment = {
   arriveOffset: number;
   duration: string;
   stops: number;
+  /** Connection airport when stops > 0 */
+  stopCity?: string;
+  /** Sector was rebooked / changed after original selection */
+  changed?: boolean;
   fareName: string;
   price: number;
   refundable: boolean;
@@ -166,6 +170,8 @@ function snapshotFields(
     perks.mealComplimentary ? '1' : '0',
     String(perks.checkInKg),
     perks.premium ? '1' : '0',
+    flight.stopCity ?? '',
+    '0', // changed flag — reserved for rebook flows
   ]
     .map((x) => encodeURIComponent(String(x)))
     .join(FIELD_SEP);
@@ -251,6 +257,8 @@ function parseSegment(chunk: string): BookingSegment | null {
     mealComp,
     checkIn,
     premium,
+    stopCity,
+    changed,
   ] = p;
 
   if (!from || !to || !flightNumber) return null;
@@ -277,6 +285,8 @@ function parseSegment(chunk: string): BookingSegment | null {
     arriveOffset: parseInt(arriveOffset, 10) || 0,
     duration,
     stops: parseInt(stops, 10) || 0,
+    stopCity: stopCity || undefined,
+    changed: changed === '1',
     fareName: fareName || 'Economy',
     price: parseInt(price, 10) || 0,
     refundable: refundable === '1',
@@ -336,6 +346,8 @@ export function defaultItinerary(): BookingItinerary {
     arriveOffset: 0,
     duration: '2h 35m',
     stops: 0,
+    stopCity: undefined,
+    changed: false,
     fareName: 'Economy',
     price: 4250,
     refundable: false,

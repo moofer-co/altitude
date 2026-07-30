@@ -28,7 +28,6 @@ import {
   meals,
   baggage,
   payMethods,
-  paymentOffers,
   PASSENGER_LABEL,
   emptyPassenger,
   withPrimary,
@@ -40,8 +39,8 @@ import {
   resolveBookingItinerary,
   seedPassengers,
   tripModeLabel,
-  type BookingSegment,
 } from '../data/bookingItinerary';
+import { offerById } from '../data/offers';
 import {
   getLinkedLoyalty,
   subscribeLoyalty,
@@ -54,7 +53,7 @@ import {
 } from '../data/loyalty';
 import { shortPax } from '../lib/flightRules';
 import { BookingPaymentSheet } from '../components/BookingPaymentSheet';
-import { Plane } from '../components/ui';
+import { ItinerarySummary } from '../components/ItinerarySummary';
 
 const HPAD = layout.screenPadding;
 
@@ -186,7 +185,7 @@ export default function Booking() {
   }, [passengers]);
 
   const addPassenger = useCallback(() => {
-    const p = emptyPassenger('adult', nextId(), false);
+    const p = emptyPassenger('adult', nextId(), passengers.length === 0);
     setEditIndex(passengers.length);
     setEditing(p);
   }, [passengers.length]);
@@ -386,40 +385,14 @@ export default function Booking() {
         keyboardDismissMode="on-drag"
       >
         {/* ── Trip summary ── */}
-        <Pressable
-          style={[s.flight, summaryOpen && s.flightOpen]}
-          onPress={() => {
+        <ItinerarySummary
+          itinerary={itinerary}
+          open={summaryOpen}
+          onToggle={() => {
             animate();
             setSummaryOpen((v) => !v);
           }}
-        >
-          <CarrierStack segments={itinerary.segments} />
-          <View style={{ flex: 1 }}>
-            <Text variant="bodyMedium">{itinerary.title}</Text>
-            <Text variant="caption" color="textTertiary">
-              {itinerary.segments.length === 1
-                ? `${primarySeg.dateLabel} · ${primarySeg.depart} · ${primarySeg.fareName}`
-                : `${itinerary.subtitle} · ₹${itinerary.flightTotal.toLocaleString()}`}
-            </Text>
-          </View>
-          <Feather
-            name={summaryOpen ? 'chevron-up' : 'chevron-down'}
-            size={18}
-            color={palette.gray400}
-          />
-        </Pressable>
-
-        {summaryOpen && (
-          <View style={s.flightDetail}>
-            {itinerary.segments.map((seg, i) => (
-              <SegmentCard
-                key={seg.legId}
-                segment={seg}
-                last={i === itinerary.segments.length - 1}
-              />
-            ))}
-          </View>
-        )}
+        />
 
         {/* ── Passengers first ── */}
         <SectionLabel>PASSENGERS</SectionLabel>
@@ -744,7 +717,7 @@ export default function Booking() {
                     <Text variant="caption" color="textTertiary" numberOfLines={1}>
                       {payment.detail}
                       {payment.offerId
-                        ? ` · ${paymentOffers.find((o) => o.id === payment.offerId)?.title ?? 'Offer applied'}`
+                        ? ` · ${offerById(payment.offerId)?.title ?? 'Offer applied'}`
                         : ''}
                     </Text>
                   </View>
@@ -882,7 +855,10 @@ export default function Booking() {
         onClose={() => setEditing(null)}
         onSave={(p, _doc) => savePassenger(p)}
         canRemove={!(editing?.primary)}
-        allowMakePrimary={!!editing && !editing.primary}
+        allowMakePrimary={
+          !!editing &&
+          passengers.some((p) => p.id !== editing.id)
+        }
         onRemove={
           editing &&
           !editing.primary &&
@@ -928,147 +904,6 @@ export default function Booking() {
         }}
       />
     </SafeAreaView>
-  );
-}
-
-function CarrierStack({ segments }: { segments: BookingSegment[] }) {
-  const unique = segments.filter(
-    (s, i, arr) => arr.findIndex((x) => x.airlineCode === s.airlineCode) === i,
-  );
-  if (unique.length === 1) {
-    return (
-      <View style={[s.airline, { backgroundColor: unique[0].airlineColor }]}>
-        <Text variant="caption" style={{ color: palette.white, fontWeight: '700' }}>
-          {unique[0].airlineCode}
-        </Text>
-      </View>
-    );
-  }
-  return (
-    <View style={s.carrierStack}>
-      {unique.slice(0, 3).map((seg, i) => (
-        <View
-          key={seg.airlineCode}
-          style={[
-            s.carrierDot,
-            { backgroundColor: seg.airlineColor, marginLeft: i === 0 ? 0 : -8, zIndex: 3 - i },
-          ]}
-        >
-          <Text style={s.carrierDotText}>{seg.airlineCode.slice(0, 2)}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function SegmentCard({
-  segment,
-  last,
-}: {
-  segment: BookingSegment;
-  last: boolean;
-}) {
-  const stopsLabel =
-    segment.stops === 0
-      ? 'Non-stop'
-      : `${segment.stops} stop${segment.stops > 1 ? 's' : ''}`;
-
-  return (
-    <View style={[s.segmentCard, !last && s.segmentCardGap]}>
-      <View style={s.segmentHead}>
-        <View style={[s.segAirline, { backgroundColor: segment.airlineColor }]}>
-          <Text style={s.segAirlineText}>{segment.airlineCode}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text variant="caption" color="textTertiary" style={{ fontWeight: '600' }}>
-            {segment.label.toUpperCase()}
-          </Text>
-          <Text variant="bodySmall" style={{ fontWeight: '600' }}>
-            {segment.airline} · {segment.flightNumber}
-          </Text>
-        </View>
-        <View style={s.fareChip}>
-          <Text style={s.fareChipText} numberOfLines={1}>
-            {segment.fareName}
-          </Text>
-        </View>
-      </View>
-
-      <View style={s.timeline}>
-        <View style={s.timeCol}>
-          <Text style={s.timeBig}>{segment.depart}</Text>
-          <Text variant="caption" style={{ fontWeight: '700' }}>
-            {segment.from}
-          </Text>
-          <Text variant="caption" color="textTertiary">
-            {segment.originTerminal}
-          </Text>
-        </View>
-
-        <View style={s.timeMid}>
-          <Text variant="caption" color="textTertiary" align="center">
-            {segment.duration}
-          </Text>
-          <View style={s.timeLine}>
-            <View style={s.timeDot} />
-            <View style={s.timeRule} />
-            <Plane size={12} color={palette.primary600} />
-            <View style={s.timeRule} />
-            <View style={s.timeDot} />
-          </View>
-          <Text variant="caption" color="textTertiary" align="center">
-            {stopsLabel}
-          </Text>
-        </View>
-
-        <View style={[s.timeCol, { alignItems: 'flex-end' }]}>
-          <Text style={s.timeBig}>
-            {segment.arrive}
-            {segment.arriveOffset > 0 ? (
-              <Text style={s.dayPlus}> +{segment.arriveOffset}</Text>
-            ) : null}
-          </Text>
-          <Text variant="caption" style={{ fontWeight: '700' }}>
-            {segment.to}
-          </Text>
-          <Text variant="caption" color="textTertiary">
-            {segment.destTerminal}
-          </Text>
-        </View>
-      </View>
-
-      <View style={s.segmentFoot}>
-        <Text variant="caption" color="textTertiary">
-          {segment.dateLabel} · {segment.fromCity} → {segment.toCity}
-        </Text>
-        <Text variant="bodySmall" style={{ fontWeight: '700' }}>
-          ₹{segment.price.toLocaleString()}
-        </Text>
-      </View>
-
-      {(segment.seatComplimentary || segment.mealComplimentary || segment.premium) && (
-        <View style={s.perkRow}>
-          {segment.seatComplimentary && (
-            <View style={s.perkChip}>
-              <Feather name="grid" size={11} color={palette.primary700} />
-              <Text style={s.perkText}>Free seats</Text>
-            </View>
-          )}
-          {segment.mealComplimentary && (
-            <View style={s.perkChip}>
-              <Feather name="coffee" size={11} color={palette.primary700} />
-              <Text style={s.perkText}>Meal included</Text>
-            </View>
-          )}
-          {segment.refundable && (
-            <View style={s.perkChip}>
-              <Feather name="refresh-cw" size={11} color={palette.primary700} />
-              <Text style={s.perkText}>Refundable</Text>
-            </View>
-          )}
-        </View>
-      )}
-    </View>
   );
 }
 
@@ -1178,128 +1013,6 @@ const s = StyleSheet.create({
   },
 
   scroll: { paddingHorizontal: HPAD, paddingTop: spacing.md },
-
-  flight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: palette.gray50,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    minHeight: 64,
-  },
-  flightOpen: {
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-  },
-  airline: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  carrierStack: { flexDirection: 'row', alignItems: 'center', width: 48 },
-  carrierDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: palette.white,
-  },
-  carrierDotText: { fontSize: 8, fontWeight: '700', color: palette.white },
-  flightDetail: {
-    backgroundColor: palette.gray50,
-    borderBottomLeftRadius: radii.md,
-    borderBottomRightRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-    gap: spacing.sm,
-  },
-  segmentCard: {
-    backgroundColor: palette.white,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: palette.gray200,
-  },
-  segmentCardGap: { marginBottom: spacing.sm },
-  segmentHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  segAirline: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segAirlineText: { color: palette.white, fontSize: 11, fontWeight: '700' },
-  fareChip: {
-    maxWidth: 100,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.full,
-    backgroundColor: palette.gray100,
-  },
-  fareChipText: { fontSize: 11, fontWeight: '600', color: palette.gray700 },
-  timeline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  timeCol: { width: 72 },
-  timeBig: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: palette.gray900,
-    letterSpacing: -0.3,
-  },
-  dayPlus: { fontSize: 12, fontWeight: '700', color: palette.warningDark },
-  timeMid: { flex: 1, alignItems: 'center', gap: 4 },
-  timeLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    gap: 4,
-  },
-  timeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: palette.primary300,
-  },
-  timeRule: { flex: 1, height: 1, backgroundColor: palette.primary200 },
-  segmentFoot: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: spacing.md,
-    paddingTop: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: palette.gray200,
-  },
-  perkRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: spacing.sm,
-  },
-  perkChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.full,
-    backgroundColor: palette.primary50,
-  },
-  perkText: { fontSize: 11, fontWeight: '600', color: palette.primary700 },
 
   sectionLabel: { letterSpacing: 1, marginTop: spacing.xl, marginBottom: spacing.sm },
   sectionNote: { marginTop: -spacing.xs, marginBottom: spacing.md },
